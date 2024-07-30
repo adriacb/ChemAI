@@ -82,7 +82,7 @@ def plot_point_cloud_3d(
     mpl.axis.Axis
         The new axis object for the 3D point cloud plot.
     """
-    cmap = mpl.cm.get_cmap(cmap)
+    cmap = mpl.colormaps.get_cmap(cmap)
     ax = fig.add_subplot(ax_pos, projection="3d")
     x, y, z = pos
     if remove_axes_ticks:

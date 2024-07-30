@@ -3,11 +3,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch_geometric.nn import MessagePassing
+from torch_geometric.nn.aggr import SumAggregation
 from torch_geometric.data import Data
 from torch import Tensor, LongTensor
 from torch_scatter import scatter
 from typing import Optional
-
 # since the task is to predict properties that are directly
 # linked to an Euclidean space, we can use a simple graph neural network
 
@@ -54,17 +54,51 @@ class EquivariantMPLayer(nn.Module):
         self,
         source_node_embed: Tensor,  # h_i
         target_node_embed: Tensor,  # h_j
-        node_dist: Tensor,  # d_ij
+        node_dist: Tensor,          # d_ij
     ) -> Tensor:
-        # implements equation (3)
+        """
+        Compute the messages "m_ij" between pairs of nodes.
+        
+        m_ij^{l} = phi_l(h_i, h_j, d_ij) for l = 0, 1, ..., L - 1 (3)
+        
+        Parameters
+        ----------
+        source_node_embed : Tensor
+            The source node embeddings.
+        target_node_embed : Tensor
+            The target node embeddings.
+        node_dist : Tensor
+            The relative squared distances between the nodes.
+            
+        Returns
+        -------
+        Tensor
+            The messages "m_ij" between the nodes.
+        """
         message_repr = torch.cat((source_node_embed, target_node_embed, node_dist), dim=-1)
         return self.message_mlp(message_repr)
 
     def compute_distances(self, node_pos: Tensor, edge_index: LongTensor) -> Tensor:
+        """
+        Compute the relative squared distances between all pairs of nodes
+        in the graph.
+        
+        Parameters
+        ----------
+        node_pos : Tensor
+            The node positions in 3D space.
+        edge_index : LongTensor
+            The edge index tensor.
+        
+        Returns
+        -------
+        Tensor
+            The relative squared distances between all pairs of nodes.
+        """
         row, col = edge_index
         xi, xj = node_pos[row], node_pos[col]
         # relative squared distance
-        # implements equation (2) ||X_i - X_j||^2
+        # implements equation (2)                                            d_ij = ||X_i - X_j||^2
         rsdist = (xi - xj).pow(2).sum(1, keepdim=True)
         return rsdist
 
@@ -119,7 +153,7 @@ class EquivariantGNN(nn.Module):
 
         # modules required for readout of a graph-level
         # representation and graph-level property prediction
-        self.aggregation = nn.aggr.SumAggregation()
+        self.aggregation = SumAggregation()
         self.f_predict = nn.Sequential(
             nn.Linear(final_embedding_size, final_embedding_size),
             self.act,

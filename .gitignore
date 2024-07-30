@@ -1,1 +1,4 @@
 data/*
+
+# .pt model files
+*.pt

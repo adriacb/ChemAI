@@ -1,0 +1,27 @@
+ATOM_FEATURES:
+  - Idx
+  - AtomicNum
+  - ChiralTag
+  - ExplicitValence
+  - FormalCharge
+  - ImplicitValence
+  - IsAromatic
+  - Mass
+  - NumExplicitHs
+  - NumImplicitHs
+  - NumRadicalElectrons
+  - Hybridization
+  - Symbol
+  - TotalDegree
+  - TotalNumHs
+  - TotalValence
+
+BOND_FEATURES:
+  - Idx
+  - BeginAtom
+  - BeginAtomIdx
+  - EndAtom
+  - EndAtomIdx
+  - BondType
+  - IsAromatic
+  - IsConjugated
