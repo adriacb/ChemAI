@@ -28,6 +28,10 @@ class Data2(BaseModel):
     def __str__(self):
         return f"Data(x={self.x}, edge_index={self.edge_index}, edge_attr={self.edge_attr}, y={self.y}, pos={self.pos}, idx={self.idx}, name={self.name}, z={self.z}, complete_edge_index={self.complete_edge_index})"
 
+ATOM_TYPES = ['C', 'O', 'N', 'H', 'F', 'Cl', 'Br', 'I', 'P', 'S']
+
+# Example predefined bond types
+BOND_TYPES = [Chem.BondType.SINGLE, Chem.BondType.DOUBLE, Chem.BondType.TRIPLE, Chem.BondType.AROMATIC]
 
 # current directory
 current_dir = os.path.dirname(os.path.realpath(__file__))
@@ -44,6 +48,39 @@ with open(os.path.join(current_dir, os.pardir, "config", "features.yml"), "r") a
     ATOM_FEATURES = features["ATOM_FEATURES"]
     BOND_FEATURES = features["BOND_FEATURES"]
 
+
+def get_atom_type_one_hot(atom: Chem.Atom) -> torch.Tensor:
+    """
+    Returns a one-hot encoded vector for the atom type.
+    
+    Args:
+        atom (Chem.Atom): RDKit atom object.
+    
+    Returns:
+        torch.Tensor: One-hot encoded atom type vector.
+    """
+    atom_symbol = atom.GetSymbol()
+    one_hot_vector = torch.zeros(len(ATOM_TYPES), dtype=torch.float32)
+    if atom_symbol in ATOM_TYPES:
+        one_hot_vector[ATOM_TYPES.index(atom_symbol)] = 1.0
+    return one_hot_vector
+
+def get_bond_type_one_hot(bond: Chem.Bond) -> torch.Tensor:
+    """
+    Returns a one-hot encoded vector for the bond type.
+    
+    Args:
+        bond (Chem.Bond): RDKit bond object.
+    
+    Returns:
+        torch.Tensor: One-hot encoded bond type vector.
+    """
+    bond_type = bond.GetBondType()
+    one_hot_vector = torch.zeros(len(BOND_TYPES), dtype=torch.float32)
+    if bond_type in BOND_TYPES:
+        one_hot_vector[BOND_TYPES.index(bond_type)] = 1.0
+    return one_hot_vector
+
 def protein_to_Data(protein:Structure, features:Tuple[str|List[str]]) -> torch.Tensor:
     """
     Convert a protein into a torch geometric `Data` object.
@@ -52,7 +89,6 @@ def protein_to_Data(protein:Structure, features:Tuple[str|List[str]]) -> torch.T
     """
     
     raise NotImplementedError("The protein_to_point_cloud function is not implemented yet.")
-
 
 def get_atom_features(atom:Chem.rdchem.Atom, features:Tuple[str|List[str]]) -> torch.Tensor:
     """
@@ -86,7 +122,6 @@ def get_atom_features(atom:Chem.rdchem.Atom, features:Tuple[str|List[str]]) -> t
     
     return torch.tensor(feat, dtype=torch.float32)
         
-
 def get_bond_features(bond:Chem.rdchem.Bond, features:Tuple[str|List[str]]) -> torch.Tensor:
     """
     Get bond features from a molecule.
@@ -113,70 +148,70 @@ def get_bond_features(bond:Chem.rdchem.Bond, features:Tuple[str|List[str]]) -> t
     
     return torch.tensor(feat, dtype=torch.float32)
 
-def molecule_to_Data(mol: Molecule, 
-                     idx:int = 0,
-                     atomfeatures:Tuple[str|List[str]] = ATOM_FEATURES, 
-                     bondfeatures:Tuple[str|List[str]] = BOND_FEATURES,
-                     target:torch.Tensor = torch.tensor([0], dtype=torch.float32)
-                     ) -> Data:
-    """
-    Converts a molecule into a torch geometric `Data` object.
+# def molecule_to_Data(mol: Molecule, 
+#                      idx:int = 0,
+#                      atomfeatures:Tuple[str|List[str]] = ATOM_FEATURES, 
+#                      bondfeatures:Tuple[str|List[str]] = BOND_FEATURES,
+#                      target:torch.Tensor = torch.tensor([0], dtype=torch.float32)
+#                      ) -> Data:
+#     """
+#     Converts a molecule into a torch geometric `Data` object.
     
-    The structure of the `Data` object is as follows:
-    ```
-            {
-                'x': torch.Tensor,                   # node features  (e.g. formal charge, membership to aromatic rings, chirality, …)
-                'edge_index': torch.Tensor,          # edges between atoms derived from covalent bonds (source_n, target_n)
-                'edge_attr': torch.Tensor,           # bond features (e.g. bond type, ring-membership, …)
-                'y': torch.Tensor,                   # target
-                'pos': torch.Tensor,                 # atomic coordinates
-                'idx': torch.Tensor,                 # index of the molecule
-                'name': str,                         # molecule name
-                'z': torch.Tensor,                   # atomic numbers
-                'complete_edge_index': torch.Tensor  # complete graph connectivity
-            }
-    ```
+#     The structure of the `Data` object is as follows:
+#     ```
+#             {
+#                 'x': torch.Tensor,                   # node features  (e.g. formal charge, membership to aromatic rings, chirality, …)
+#                 'edge_index': torch.Tensor,          # edges between atoms derived from covalent bonds (source_n, target_n)
+#                 'edge_attr': torch.Tensor,           # bond features (e.g. bond type, ring-membership, …)
+#                 'y': torch.Tensor,                   # target
+#                 'pos': torch.Tensor,                 # atomic coordinates
+#                 'idx': torch.Tensor,                 # index of the molecule
+#                 'name': str,                         # molecule name
+#                 'z': torch.Tensor,                   # atomic numbers
+#                 'complete_edge_index': torch.Tensor  # complete graph connectivity
+#             }
+#     ```
     
-    Args:
-        mol (Molecule): The molecule.
-        atomfeatures (Tuple[str|List[str]], optional): The atom features to consider. Defaults to ATOM_FEATURES.
-        bondfeatures (Tuple[str|List[str]], optional): The bond features to consider. Defaults to BOND_FEATURES.
-        target (torch.Tensor, optional): The target. Defaults to torch.tensor([0], dtype=torch.float32).
+#     Args:
+#         mol (Molecule): The molecule.
+#         atomfeatures (Tuple[str|List[str]], optional): The atom features to consider. Defaults to ATOM_FEATURES.
+#         bondfeatures (Tuple[str|List[str]], optional): The bond features to consider. Defaults to BOND_FEATURES.
+#         target (torch.Tensor, optional): The target. Defaults to torch.tensor([0], dtype=torch.float32).
     
-    Returns:
-        Dict[str, torch.Tensor]: The molecule as a `Data` object.
-    """
+#     Returns:
+#         Dict[str, torch.Tensor]: The molecule as a `Data` object.
+#     """
 
-    data = dict()
-    data['name'] = mol.get_name() if mol.get_name() is not None else "Molecule_{}".format(idx)
-    data['smiles'] = Chem.MolToSmiles(mol.molecule)
-    coordinates = mol.get_coordinates()
-    data['pos'] = torch.tensor(coordinates, dtype=torch.float32)
+#     data = dict()
+#     data['name'] = mol.get_name() if mol.get_name() is not None else "Molecule_{}".format(idx)
+#     data['smiles'] = Chem.MolToSmiles(mol.molecule)
+#     coordinates = mol.get_coordinates()
+#     data['pos'] = torch.tensor(coordinates, dtype=torch.float32)
     
-    x = []                                                                                          # X belong to R^m*d is a matrix of m atoms with d features each
-    edge_index = []                                                                                 # edges between atoms derived from covalent bonds (source_n, target_n)
-    edge_attr = []                                                                                  # bond features (e.g. bond type, ring-membership, …)
-    for atom in mol.get_atoms():
-        # getBonds()
-        for bond in atom.GetBonds():
-            edge_attr.append(get_bond_features(bond, bondfeatures))
-            edge_index.append([atom.GetIdx(), bond.GetOtherAtomIdx(atom.GetIdx())])                 # (source_n, target_n)
+#     x = []                                                                                          # X belong to R^m*d is a matrix of m atoms with d features each
+#     edge_index = []                                                                                 # edges between atoms derived from covalent bonds (source_n, target_n)
+#     edge_attr = []                                                                                  # bond features (e.g. bond type, ring-membership, …)
+#     for atom in mol.get_atoms():
+#         # getBonds()
+#         for bond in atom.GetBonds():
+#             edge_attr.append(get_bond_features(bond, bondfeatures))
+#             edge_index.append([atom.GetIdx(), bond.GetOtherAtomIdx(atom.GetIdx())])                 # (source_n, target_n)
             
-        x.append(get_atom_features(atom, atomfeatures))
+#         x.append(get_atom_features(atom, atomfeatures))
 
-    data['x'] = torch.stack(x, dim=0)
-    data['edge_index'] = torch.tensor(edge_index, dtype=torch.long).t().contiguous()                # edge connectivity
-    # take care if edge_index is empty
-    if len(edge_attr) == 0:
-        edge_attr = torch.zeros(
-            (data['edge_index'].size(1), len(bondfeatures)), dtype=torch.float32)                   # bond features  
-    data['edge_attr'] = torch.stack(edge_attr, dim=0)                                               # edge features
-    data['z'] = data['x'][:, 1].long()                                                              # atomic numbers
-    data['idx'] = torch.tensor([idx], dtype=torch.long)                                             # molecule index
+#     data['x'] = torch.stack(x, dim=0)
+#     data['edge_index'] = torch.tensor(edge_index, dtype=torch.long).t().contiguous()                # edge connectivity
+#     # take care if edge_index is empty
+#     if len(edge_attr) == 0:
+#         edge_attr = torch.zeros(
+#             (data['edge_index'].size(1), len(bondfeatures)), dtype=torch.float32)                   # bond features  
+#     data['edge_attr'] = torch.stack(edge_attr, dim=0)                                               # edge features
+#     data['z'] = data['x'][:, 1].long()                                                              # atomic numbers
+#     data['idx'] = torch.tensor([idx], dtype=torch.long)                                             # molecule index
 
-    data['complete_edge_index'] = torch.tensor([[i, j] for i in range(data['x'].size(0)) \
-        for j in range(data['x'].size(0)) if i != j], dtype=torch.long).t().contiguous()            # complete graph connectivity
+#     data['complete_edge_index'] = torch.tensor([[i, j] for i in range(data['x'].size(0)) \
+#         for j in range(data['x'].size(0)) if i != j], dtype=torch.long).t().contiguous()            # complete graph connectivity
 
-    data['y'] = target
+#     data['y'] = target
 
-    return Data(**data)
+#     return Data(**data)

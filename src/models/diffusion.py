@@ -5,174 +5,140 @@ from torch import nn
 from torch.nn import functional as F
 from torch_geometric.data import Data
 
-def segment_schedule(timesteps: int, time_segment: list, segment_diff: list) -> torch.Tensor:
-    """
-    Generates a schedule for beta values over different segments.
+from .scheduler import beta_schedule
 
-    Parameters:
-        timesteps (int): Total number of timesteps.
-        time_segment (list): List of segment lengths.
-        segment_diff (list): List of dictionaries with parameters for each segment.
+def to_torch_const(x):
+    x = torch.from_numpy(x).float()
+    x = nn.Parameter(x, requires_grad=False)
+    return x
 
-    Returns:
-        torch.Tensor: Beta values for the entire schedule.
-    """
-    assert np.sum(time_segment) == timesteps
+class Diffusion:
+    def __init__(self, timesteps:int):
+        self.timesteps = timesteps
+        self.scaling = 1.0                      # Scaling factor for the noise.
 
-    alphas_cumprod = []
-
-    for i in range(len(time_segment)):
-        time_this = time_segment[i] + 1
-        params = segment_diff[i]
-        _, alphas_this = advance_schedule(time_this, **params, return_alphas_bar=True)
-        alphas_cumprod.extend(alphas_this[1:])
-
-    alphas_cumprod = np.array(alphas_cumprod)
+    @staticmethod
+    def get_betas(timesteps:int, **kwargs) -> torch.Tensor:
+        """
+        Returns the beta schedule tensor based on the given type.
+        
+        Args:
+            timesteps (int): The number of time steps.
+            type (str): The type of beta schedule.
+        
+        Returns:
+            torch.Tensor: The beta schedule tensor.
+        """
+        print
+        if kwargs["type"] == 'advance':
+            betas = beta_schedule(timesteps, **kwargs)
+        elif kwargs["type"] == 'segment':
+            betas = beta_schedule(timesteps, **kwargs)
+        else:
+            raise ValueError(f"Invalid beta schedule type: {kwargs['type']}")
+        return betas
     
-    alphas = np.zeros_like(alphas_cumprod)
-    alphas[0] = alphas_cumprod[0]
-    alphas[1:] = alphas_cumprod[1:] / alphas_cumprod[:-1]
-    betas = 1 - alphas
-    betas = np.clip(betas, 0, 1)
+    def qrt(self, 
+            r: torch.Tensor, 
+            t: int, 
+            beta_config:dict={
+                            'type': 'advance',
+                            'scale_start': 0.9999,
+                            'scale_end': 0.0001,
+                            'width': 3}
+        ) -> torch.Tensor:
+        """
+        Adds noise to the ATOMIC POSITIONS, the noise is modeled as a Gaussian distribution.
+        
+        q(r^{t}_i | r^{t-1}_i) := \mathcal{N}(r^{t}_i | \sqrt{1-\beta^{t} r^{t-1}_i}, \beta^{t}\mathbb{I})
+        - $\mathbb{I}^{3x3}$ is the identity matrix.
+        - $\beta^t \in [0,1]$ (noise scaling schedule).
 
-    return torch.tensor(betas, dtype=torch.float32)
+        Args:
+            r (torch.Tensor): The atomic positions tensor.
+            t (int): The current time step.
+            beta_config (dict): The beta configuration.
+        
+        Returns:
+            torch.Tensor: The noisy atomic positions tensor.
+        """
+        betas = self.get_betas(self.timesteps, **beta_config)
+        alphas = 1. - betas
+        alphas_hat = torch.cumprod(alphas, dim=0)
+        alpha_t = alphas_hat[t].reshape(1, -1)
+        noise = torch.randn_like(r)
+        noisy_r = torch.sqrt(alpha_t) * r + torch.sqrt(1 - alpha_t) * noise
+        return noisy_r
 
-def sigmoid(x: float) -> float:
-    """
-    Sigmoid function.
-    """
-    return 1 / (1 + np.exp(-x))
+    def qat(self, a: torch.Tensor, t: int, 
+            beta_config:dict={
+                            'type': 'advance',
+                            'scale_start': 0.9999,
+                            'scale_end': 0.0001,
+                            'width': 3}
+            ) -> torch.Tensor:
+        """
+        Adds noise to the ATOM TYPES, the noise is modeled as a Categorical distribution.
 
-def advance_schedule(
-        timesteps: int, 
-        scale_start:float, 
-        scale_end: float,
-        width: int,
-        return_alphas_bar: bool = False
-        ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """
-    Generates a schedule for beta values over different segments.
-    """
-    k = width
-    A0 = scale_end
-    A1 = scale_start
+        q(a^{t}_i | a^{t-1}_i) := \mathcal{C}(a^{t}_i | (1-\beta^{t}) a^{t-1}_i, \beta^{t}\mathbb{1}_k)
+        - $\mathbb{1}_k$ represents a one-hot vector with one at the kth position and all the others zeros.
+        - $\beta^t \in [0,1]$ (noise scaling schedule).
 
-    a = (A0-A1)/(sigmoid(-k) - sigmoid(k))
-    b = 0.5 * (A0 + A1 - a)
-
-    x = np.linspace(-1, 1, timesteps)
-    y = a * sigmoid(- k * x) + b
-    # print(y)
+        Args:
+            a (torch.Tensor): The atom types tensor.
+            t (int): The current time step.
+            beta_config (dict): The beta configuration.
+        
+        Returns:
+            torch.Tensor: The noisy atom types tensor.
+        """
+        betas = self.get_betas(self.timesteps, **beta_config)
+        alphas = 1. - betas
+        alphas_hat = torch.cumprod(alphas, dim=0)
+        alpha_t = alphas_hat[t].reshape(1, -1)
+        noise = torch.randint_like(a, 0, a.shape[1])
+        noisy_a = (1 - alpha_t) * a + alpha_t * noise
+        return noisy_a
     
-    alphas_cumprod = y 
-    alphas = np.zeros_like(alphas_cumprod)
-    alphas[0] = alphas_cumprod[0]
-    alphas[1:] = alphas_cumprod[1:] / alphas_cumprod[:-1]
-    betas = 1 - alphas
-    betas = np.clip(betas, 0, 1)
-    if return_alphas_bar:
-        return torch.tensor(betas, dtype=torch.float32), torch.tensor(alphas, dtype=torch.float32)
-    return torch.tensor(betas, dtype=torch.float32)
 
-def forward_diffusion(data: dict, t: int, timesteps:int) -> dict:
-    """
-    Adds noise to the molecule data based on the given noise schedule at time step t.
-    
-    Args:
-        data (dict): The molecule data containing atom types, bond types, and positions.
-        t (int): The current time step.
-        betas (torch.Tensor): The noise scaling schedule tensor.
-    
-    Returns:
-        dict: The noisy molecule data.
-    """
-   
-    noisy_data = {}
-    
-    # Apply noise to positions
-    betas = beta_schedule(timesteps, scale_start=0.9999, scale_end=0.0001, type='advance', width=3)
-    alphas = 1 - betas
-    alpha_hat = torch.cumprod(alphas, dim=0)
-    pos = data['pos']
-    noise = torch.randn_like(pos)
-    alpha_t = alpha_hat[t]
-    mean = torch.sqrt(alpha_t) * pos
-    variance = torch.sqrt(1 - alpha_t) * noise
-    noisy_pos = mean + variance
-    noisy_data['pos'] = noisy_pos
-    
-    # Apply noise to atom types (Categorical noise)
-    betas = beta_schedule(timesteps, scale_start=0.9999, scale_end=0.0001, type='advance', width=3)
-    alphas = 1 - betas
-    alpha_hat = torch.cumprod(alphas, dim=0)
-    atom_types = data['x']
-    alpha_t = alpha_hat[t].reshape(1, -1)
-    noise = torch.rand_like(atom_types)  # Use uniform noise for categorical data
-    noisy_atom_types = torch.sqrt(alpha_t) * atom_types + torch.sqrt(1 - alpha_t) * noise
-    noisy_atom_types = F.softmax(noisy_atom_types, dim=-1)
-    noisy_data['x'] = noisy_atom_types
-    
-    # Apply noise to bond types (Categorical noise)
-    betas = beta_schedule(
-        timesteps, 
-        time_segment=[600, 400], 
-        segment_diff=[
-            {'scale_start': 0.9999, 'scale_end': 0.001, 'width': 3}, 
-            {'scale_start': 0.001, 'scale_end': 0.0001, 'width': 2}],
-            type = 'segment'
-            )
-    bond_types = data['edge_attr']
-    alphas = 1 - betas
-    alpha_hat = torch.cumprod(alphas, dim=0)
-    alpha_t = alpha_hat[t].reshape(1, -1)
-    noise = torch.rand_like(bond_types)  # Use uniform noise for categorical data
-    noisy_bond_types = torch.sqrt(alpha_t) * bond_types + torch.sqrt(1 - alpha_t) * noise
-    noisy_bond_types = F.softmax(noisy_bond_types, dim=-1)
-    noisy_data['edge_attr'] = noisy_bond_types
-    
-    # Preserve other data
-    noisy_data['edge_index'] = data['edge_index']
-    noisy_data['z'] = data['z']
-    noisy_data['idx'] = data['idx']
-    noisy_data['complete_edge_index'] = data['complete_edge_index']
-    noisy_data['y'] = data['y']
-    noisy_data['name'] = data['name']
-    noisy_data['smiles'] = data['smiles']
-    noisy_data['bond_matrix'] = data['bond_matrix']
-    
-    return Data(**noisy_data)
 
-def beta_schedule(
-        timesteps: int, 
-        type: str = 'linear', 
-        **kwargs: float
-                  ) -> torch.Tensor:
-    """
-    Returns the value of beta for the given timesteps.
-    Amount of noise that is being applied at each time step.
+    def forward(self, data: dict, t: int) -> dict:
+        """
+        Adds noise to the molecule data based on the given noise schedule at time step t.
+        
+        For atom types and bond types we represent them using categorical distributions.
 
-    Parameters:
+        ```
+        - $q(r^{t}_i | r^{t-1}_i) := \mathcal{N}(r^{t}_i | \sqrt{1-\beta^{t} r^{t-1}_i}, \beta^{t}\mathbb{I})$
+        - $q(a^{t}_i | a^{t-1}_i) := \mathcal{C}(a^{t}_i | (1-\beta^{t}) a^{t-1}_i, \beta^{t}\mathbb{1}_k)$ 
+        - $q(b^{t}_{ij} | b^{t-1}_{ij}) := \mathcal{C}(b^{t}_{ij} | (1-\beta^{t}) b^{t-1}_{ij}, \beta^{t}\mathbb{1}_k)$        
+        ```
+        """
+        noisy_data = {}
+        
+        # Apply noise to positions
+        pos = data['pos']
+        noisy_pos = self.qrt(pos, t)
+        noisy_data['pos'] = noisy_pos
 
-        timesteps (int): The total number of time steps.
-        type (str): The type of schedule ('linear' or 'cosine').
+        # Apply noise to atom types (Categorical noise)
+        atom_types = data['x']
+        noisy_atom_types = self.qat(atom_types, t)
+        noisy_data['x'] = noisy_atom_types
 
-    Returns:
-        torch.Tensor: The value of beta for each time step.
-    """
-    if type == 'linear':
-        return torch.linspace(kwargs['beta_min'], kwargs['beta_max'], timesteps)
-    elif type == 'cosine':
-        #  as proposed in https://openreview.net/forum?id=-NEXDKk8gZ
-        steps = timesteps + 1
-        x = np.linspace(0, steps, steps)
-        alphas_cumprod = np.cos(((x / steps) + 0.008) / (1 + 0.008) * np.pi * 0.5) ** 2
-        alphas_cumprod = alphas_cumprod / alphas_cumprod[0]
-        betas = 1 - (alphas_cumprod[1:] / alphas_cumprod[:-1])
-        return torch.tensor(betas, dtype=torch.float32)
-    elif type == 'advance':
-        return advance_schedule(scale_start=kwargs['scale_start'], scale_end=kwargs['scale_end'],
-                                width=kwargs['width'], timesteps=timesteps, return_alphas_bar=False)
-    elif type == 'segment':
-        return segment_schedule(timesteps, kwargs['time_segment'], kwargs['segment_diff'])
-    else:
-        raise ValueError(f"Unknown schedule type: {type}. Supported types are 'linear' and 'cosine'.")
+        # # Apply noise to bond types (Categorical noise)
+        # bond_types = data['edge_attr']
+        # noisy_bond_types = self.qat(bond_types, t)
+        # noisy_data['edge_attr'] = noisy_bond_types
+
+        # Preserve other data
+        noisy_data['edge_index'] = data['edge_index']
+        noisy_data['z'] = data['z']
+        noisy_data['idx'] = data['idx']
+        noisy_data['complete_edge_index'] = data['complete_edge_index']
+        noisy_data['y'] = data['y']
+        noisy_data['name'] = data['name']
+        noisy_data['smiles'] = data['smiles']
+        noisy_data['bond_matrix'] = data['bond_matrix']
+
+        return Data(**noisy_data)
