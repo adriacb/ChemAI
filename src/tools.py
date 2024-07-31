@@ -7,29 +7,6 @@ from torch import Tensor
 from torch_geometric.data import Data
 
 
-def beta_schedule(beta_min: float, beta_max: float, timesteps: int, type: str = 'linear') -> torch.Tensor:
-    """
-    Returns the value of beta for the given timesteps.
-    Amount of noise that is being applied at each time step.
-
-    Parameters:
-        beta_min (float): The minimum value of beta.
-        beta_max (float): The maximum value of beta.
-        timesteps (int): The total number of time steps.
-        type (str): The type of schedule ('linear' or 'cosine').
-
-    Returns:
-        torch.Tensor: The value of beta for each time step.
-    """
-    if type == 'linear':
-        return torch.linspace(beta_min, beta_max, timesteps)
-    elif type == 'cosine':
-        # Generate a cosine schedule that starts from 0 to 1
-        steps = torch.arange(timesteps) / (timesteps - 1)
-        cosine_schedule = 0.5 * (1 - torch.cos(torch.pi * steps))  # Cosine function from 0 to 1
-        return beta_min + (beta_max - beta_min) * cosine_schedule
-    else:
-        raise ValueError(f"Unknown schedule type: {type}. Supported types are 'linear' and 'cosine'.")
 
 def to_perceived_brightness(rgb: np.ndarray) -> np.ndarray:
     """
