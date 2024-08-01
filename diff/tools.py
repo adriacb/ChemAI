@@ -6,8 +6,6 @@ from typing import Callable
 from torch import Tensor
 from torch_geometric.data import Data
 
-
-
 def to_perceived_brightness(rgb: np.ndarray) -> np.ndarray:
     """
     Auxiliary function, useful for choosing label colors
@@ -105,7 +103,6 @@ def plot_model_input(data: Data, fig: mpl.figure.Figure, ax_pos: int) -> mpl.axi
     color = color.flatten().detach().numpy()
     pos = pos.T.detach().numpy()
     return plot_point_cloud_3d(fig, ax_pos, color, pos, cbar_label="Atomic number")
-
 
 def plot_model_embedding(
     data: Data, model: Callable[[Data], Tensor], fig: mpl.figure.Figure, ax_pos: int
