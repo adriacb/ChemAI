@@ -25,39 +25,39 @@ def plot_point_cloud_3d(
     annotate_points: bool = True,
     remove_axes_ticks: bool = True,
     cbar_label: str = "",
-) -> mpl.axis.Axis:
+) -> mpl.axes.Axes:
     """Visualize colored 3D point clouds.
 
     Parameters
     ----------
     fig : mpl.figure.Figure
-        The figure for which a new axis object is added for plotting
+        The figure for which a new axis object is added for plotting.
     ax_pos : int
         Three-digit integer specifying axis layout and position
-        (see docs for `mpl.figure.Figure.add_subplot`)
+        (see docs for `mpl.figure.Figure.add_subplot`).
     color : np.ndarray
-        The point colors as a float array of shape `(N,)`
+        The point colors as a float array of shape `(N,)`.
     pos : np.ndarray
-        The point xyz-coordinates as an array
+        The point xyz-coordinates as an array.
     cmap : str, optional
         String identifier for a matplotlib colormap.
-        Is used to map the values in `color` to rgb colors.
-        , by default "plasma"
+        Is used to map the values in `color` to RGB colors,
+        by default "plasma".
     point_size : float, optional
-        The size of plotted points, by default 180.0
+        The size of plotted points, by default 180.0.
     label_axes : bool, optional
-        whether to label x,y and z axes by default False
+        Whether to label x, y, and z axes, by default False.
     annotate_points : bool, optional
-        whether to label points with their index, by default True
+        Whether to label points with their index, by default True.
     cbar_label : str, optional
-        label for the colorbar, by default ""
+        Label for the colorbar, by default "".
 
     Returns
     -------
-    mpl.axis.Axis
+    mpl.axes.Axes
         The new axis object for the 3D point cloud plot.
     """
-    cmap = mpl.colormaps.get_cmap(cmap)
+    cmap = mpl.cm.get_cmap(cmap)
     ax = fig.add_subplot(ax_pos, projection="3d")
     x, y, z = pos
     if remove_axes_ticks:
@@ -69,7 +69,7 @@ def plot_point_cloud_3d(
         ax.set_ylabel("$y$ coordinate")
         ax.set_zlabel("$z$ coordinate")
     sc = ax.scatter(x, y, z, c=color, cmap=cmap, s=point_size)
-    plt.colorbar(sc, location="bottom", shrink=0.6, anchor=(0.5, 2), label=cbar_label)
+    plt.colorbar(sc, ax=ax, location="bottom", shrink=0.6, anchor=(0.5, 2), label=cbar_label)
     if annotate_points:
         _colors = sc.cmap(color)
         rgb = _colors[:, :3].transpose()

@@ -184,4 +184,4 @@ def beta_schedule(
     elif type == 'segment':
         return segment_schedule(timesteps, kwargs['time_segment'], kwargs['segment_diff'])
     else:
-        raise ValueError(f"Unknown schedule type: {type}. Supported types are 'linear' and 'cosine'.")
+        raise ValueError(f"Unknown schedule type: {type}. Choose from 'linear', 'cosine', 'advance', 'segment'.")
