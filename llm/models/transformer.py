@@ -1,90 +1,167 @@
 import torch
 import torch.nn as nn
+from typing import Tuple
 
-class MultiHeadAttention(nn.Module):
-    def __init__(self, d_model: int, num_heads: int, dropout: float = 0.1):
-        super(MultiHeadAttention, self).__init__()
-        assert d_model % num_heads == 0, 'd_model must be divisible by num_heads'
-        self.d_model = d_model                          # Dimension of the model
-        self.num_heads = num_heads                      # Number of heads
-        self.head_dim = d_model // num_heads            # Dimension of each head
-        
-        self.dropout = nn.Dropout(dropout)              # Dropout layer
-        
-        self.fc_q = nn.Linear(d_model, d_model)         # Fully connected layer for queries
-        self.fc_k = nn.Linear(d_model, d_model)         # Fully connected layer for keys
-        self.fc_v = nn.Linear(d_model, d_model)         # Fully connected layer for values
-        
-        self.fc_o = nn.Linear(d_model, d_model)         # Fully connected layer for output
-    
-    def split_heads(self, x: torch.Tensor, batch_size: int) -> torch.Tensor:
-        """
-        Split the input tensor into multiple heads.
+from llm.models.mha import AttentionBlock
+from llm.tools import PositionalEncoding
+
+class FeedForward(nn.Module):
+    def __init__(self, 
+                 embedding_dim: int, 
+                 ff_dim: int):
+        """Initialize the feed-forward block.
         
         Args:
-        - x: torch.Tensor of shape (batch_size, seq_len, d_model)
-        - batch_size: int
+        - embedding_dim: int - The dimension of the input embeddings
+        - ff_dim: int - The dimension of the feed-forward network"""
+        super(FeedForward, self).__init__()
+
+        self.linear_1 = nn.Linear(embedding_dim, ff_dim)
+        self.relu = nn.ReLU()                           # Try with GeLU
+        self.linear_2 = nn.Linear(ff_dim, embedding_dim)
         
-        Returns:
-        - split: torch.Tensor of shape (batch_size, num_heads, seq_len, head_dim)
-        """
-        x = x.view(batch_size, -1, self.num_heads, self.head_dim)
-        return x.permute(0, 2, 1, 3)                     # (batch_size, num_heads, seq_len, head_dim)
     
-    def __call__(self, v: torch.Tensor, k: torch.Tensor, q: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass of the MultiHeadAttention layer.
-        
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass of the feed-forward block.
+
         Args:
-        - v: torch.Tensor of shape (batch_size, seq_len, d_model)
-        - k: torch.Tensor of shape (batch_size, seq_len, d_model)
-        - q: torch.Tensor of shape (batch_size, seq_len, d_model)
-        - mask: torch.Tensor of shape (batch_size, 1, seq_len, seq_len)
-        
+        - x: torch.Tensor of shape (batch_size, context_size, embedding_dim)
+
         Returns:
-        - x: torch.Tensor of shape (batch_size, seq_len, d_model)
-        """
-        batch_size = q.shape[0]
-        
-        q = self.fc_q(q)                                # (batch_size, seq_len, d_model)
-        k = self.fc_k(k)                                # (batch_size, seq_len, d_model)
-        v = self.fc_v(v)                                # (batch_size, seq_len, d_model)
-        
-        q = self.split_heads(q, batch_size)             # (batch_size, num_heads, seq_len, head_dim)
-        k = self.split_heads(k, batch_size)             # (batch_size, num_heads, seq_len, head_dim)
-        v = self.split_heads(v, batch_size)             # (batch_size, num_heads, seq_len, head_dim)
-        
-        # Scaled dot-product attention (multiple heads)
-        scalled_attention, attention_weights = self.scaled_dot_product_attention(q, k, v, mask)
+        - x: torch.Tensor of shape (batch_size, context_size, embedding_dim)"""
+        x = self.linear_1(x)
+        x = self.relu(x)
+        x = self.linear_2(x)
+        return x
 
-        scalled_attention = scalled_attention.permute(0, 2, 1, 3).contiguous()  # (batch_size, seq_len, num_heads, head_dim)
-
-        concat_attention = scalled_attention.view(batch_size, -1, self.d_model)  # (batch_size, seq_len, d_model)
-        x = self.fc_o(concat_attention)                                         # (batch_size, seq_len, d_model)
-
-        return x, attention_weights
+class EncoderLayer(nn.Module):
+    def __init__(self, d_model: int, num_heads: int, dff: int, rate: float = 0.1):
+        super(EncoderLayer, self).__init__()
+        self.mha = nn.MultiheadAttention(d_model, num_heads)
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, dff),
+            nn.ReLU(),
+            nn.Linear(dff, d_model)
+        )
+        self.layernorm1 = nn.LayerNorm(d_model)
+        self.layernorm2 = nn.LayerNorm(d_model)
+        self.dropout1 = nn.Dropout(rate)
+        self.dropout2 = nn.Dropout(rate)
     
-    def scaled_dot_product_attention(self, q: torch.Tensor, k: torch.Tensor, v: torch.Tensor, mask: torch.Tensor) -> torch.Tensor:
+    def __call__(self, x: torch.Tensor, training: bool, mask: torch.Tensor) -> torch.Tensor:
         """
-        Scaled dot-product attention mechanism.
-        
+        Forward pass of the encoder layer.
+
         Args:
-        - q: torch.Tensor of shape (batch_size, num_heads, seq_len, head_dim)
-        - k: torch.Tensor of shape (batch_size, num_heads, seq_len, head_dim)
-        - v: torch.Tensor of shape (batch_size, num_heads, seq_len, head_dim)
-        - mask: torch.Tensor of shape (batch_size, 1, seq_len, seq_len)
-        
+        - x: torch.Tensor of shape (batch_size, input_seq_len, d_model)
+        - training: bool
+        - mask: torch.Tensor of shape (batch_size, 1, 1, input_seq_len)
+
         Returns:
-        - output: torch.Tensor of shape (batch_size, num_heads, seq_len, head_dim)
-        - attention_weights: torch.Tensor of shape (batch_size, num_heads, seq_len, seq_len)
+        - x: torch.Tensor of shape (batch_size, input_seq_len, d_model)
         """
-        matmul_qk = torch.matmul(q, k.permute(0, 1, 3, 2))
-        scaled_attention_logits = matmul_qk / torch.sqrt(torch.tensor(self.head_dim, dtype=torch.float32))
+        attn_output, _ = self.mha(x, x, x, attn_mask=mask)
+        attn_output = self.dropout1(attn_output, training=training)
+        out1 = self.layernorm1(x + attn_output)
 
-        if mask is not None:
-            scaled_attention_logits += (mask * -1e9)
+        ffn_output = self.ffn(out1)
+        ffn_output = self.dropout2(ffn_output, training=training)
+        out2 = self.layernorm2(out1 + ffn_output)
+
+        return out2
+
+class Encoder(nn.Module):
+    def __init__(self, num_layers: int, d_model: int, num_heads: int, dff: int, input_vocab_size: int, max_pe_input: int, rate: float = 0.1):
+        super(Encoder, self).__init__()
+        self.d_model = d_model
+        self.num_layers = num_layers
+        self.embedding = nn.Embedding(input_vocab_size, d_model)
+        ps_encoding = PositionalEncoding(d_model, max_pe_input)
+        self.pos_encoding = ps_encoding.get_positional_encoding(d_model, max_pe_input)
+        self.enc_layers = [EncoderLayer(d_model, num_heads, dff, rate) for _ in range(num_layers)]
+        self.dropout = nn.Dropout(rate)
+    
+    def __call__(self, input: torch.Tensor, training: bool, mask: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the encoder.
+
+        Args:
+        - input: torch.Tensor of shape (batch_size, input_seq_len)
+        - training: bool
+        - mask: torch.Tensor of shape (batch_size, 1, 1, input_seq_len)
+
+        Returns:
+        - x: torch.Tensor of shape (batch_size, input_seq_len, d_model)
+        """
+        seq_len = input.size(1)
+        x = self.embedding(input)
+        x *= torch.sqrt(torch.tensor(self.d_model, dtype=torch.float32))
+        x += self.pos_encoding(torch.arange(seq_len).unsqueeze(0))
+        x = self.dropout(x)
+
+        for i in range(self.num_layers):
+            x = self.enc_layers[i](x, training, mask)
         
-        attention_weights = torch.nn.functional.softmax(scaled_attention_logits, dim=-1)
-        output = torch.matmul(attention_weights, v)
+        return x
+    
+class DecoderLayer(nn.Module):
+    def __init__(self, embedding_dim: int,
+                 head_dim: int,
+                 context_size: int,
+                 ff_dim: int,
+                 dropout: float = 0.2):
+        """Initialize the decoder layer.
 
-        return output, attention_weights
+        1- Multi-head attention block
+        2- Feed-forward block
+        3- Layer normalization
+        4- Layer normalization 
+
+        Args:
+        - embedding_dim: int - The dimension of the input embeddings
+        - head_dim: int - The dimension of the heads
+        - context_size: int - The size of the context
+        - ff_dim: int - The dimension of the feed-forward network
+        - dropout: float - The dropout rate"""
+        super(DecoderLayer, self).__init__()
+
+        self.attention = AttentionBlock(embedding_dim, head_dim, context_size)
+        self.feedforward = FeedForward(embedding_dim, ff_dim)
+        self.norm_1 = nn.LayerNorm(embedding_dim)
+        self.norm_2 = nn.LayerNorm(embedding_dim)
+        self.drop_shortcut = nn.Dropout(p=dropout)
+    
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass of the decoder layer.
+
+        Args:
+        - x: torch.Tensor of shape (batch_size, context_size, embedding_dim)
+
+        Returns:
+        - x: torch.Tensor of shape (batch_size, context_size, embedding_dim)"""
+        # Shortcut connection for the attention block
+        shortcut = x                      # Shortcut connection
+        x = self.attention(x)             # Multi-head attention
+        x = self.drop_shortcut(x)         # Dropout
+        x = self.norm_1(x + shortcut)     # Layer normalization
+        # Shortcut connection for the feed-forward block
+        shortcut = x
+        x = self.feedforward(x)
+        x = self.drop_shortcut(x)
+        x = self.norm_2(x + shortcut)
+        return x
+
+
+
+class Transformer(nn.Module):
+    def __init__(self, 
+                 num_layers: int, 
+                 d_model: int, 
+                 num_heads: int, 
+                 dff: int, 
+                 input_vocab_size: int, 
+                 target_vocab_size: int, 
+                 max_pe_input: int, 
+                 max_pe_target: int, 
+                 rate: float = 0.1):
+        super(Transformer, self).__init__()
