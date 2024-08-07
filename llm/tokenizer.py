@@ -1,4 +1,6 @@
 
+from transformers import AutoTokenizer
+
 from typing import Dict, List
 # https://github.com/MTxSouza/MediumArticleGenerator/blob/main/model/tokenizer.py
 
@@ -148,3 +150,80 @@ class StructTokenizer:
         - tokens: List[str]
         """
         taged_text = self.SOS + text + self.EOS + self.SOA
+
+
+class GPTTokenizer:
+
+    tokenizer = AutoTokenizer.from_pretrained("gpt2")
+    EOA = tokenizer.eos_token
+
+    def __init__(self):
+        """
+        Bert tokenizer class for converting text to numbers and vice versa.
+        """
+        self.tokenizer = self.tokenizer
+
+    def __len__(self) -> int:
+        """
+        Return the size of vocabulary.
+
+        Returns:
+            int : The size of vocabulary.
+        """
+        return self.tokenizer.vocab_size
+
+    @property
+    def pad_index(self) -> int:
+        """
+        Get the index of padding token.
+
+        Returns:
+            int : The index of padding token.
+        """
+        return self.tokenizer.bos_token_id
+
+    def get_vocab(self) -> Dict[str, int]:
+        """
+        Get the vocabulary of Tokenizer.
+
+        Returns:
+            Dict[str, int] : The vocabulary dictionary.
+        """
+        return self.tokenizer.get_vocab()
+
+    def encode(self, text: str) -> List[int]:
+        """
+        Tokenize the input text into a list of tokens.
+
+        Args:
+            text (str) : The input text.
+        
+        Returns:
+            List[int] : The list of token indices.
+        """
+        return self.tokenizer.encode(text=text, add_special_tokens=False)
+
+    def decode(self, indices: List[int]) -> str:
+        """
+        Decode the list of indices into a text.
+
+        Args:
+            indices (List[int]) : The list of indices.
+
+        Returns:
+            str : The output text.
+        """
+        return self.tokenizer.decode(token_ids=indices, skip_special_tokens=False)
+
+    def tokenize(self, text: str) -> List[str]:
+        """
+        Tokenize the input text into a list of tokens and add special tokens.
+
+        Args:
+            text (str) : The input text.
+
+        Returns:
+            List[str] : The list of tokens.
+        """
+        tagged_text = text + "\n\n"
+        return self.encode(text=tagged_text)

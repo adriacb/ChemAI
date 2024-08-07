@@ -4,7 +4,6 @@ Main logging module of the project.
 import logging
 import os
 
-
 class Logger(logging.Logger):
 
     log_dirpath = "./model/logs"

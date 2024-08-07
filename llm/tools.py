@@ -1,5 +1,8 @@
 import torch
 import torch.nn as nn
+
+from transformers import AutoModel
+
 from .logger import model_logger
 
 # https://github.com/MTxSouza/MediumArticleGenerator/blob/main/model/embedding.py
@@ -64,3 +67,70 @@ class PositionalEncoding(nn.Module):
         return x_pe
     
     
+class Embedding(nn.Module):
+
+    def __init__(self, vocab_size: int, emb_dim: int):
+        """
+        Embedding layer for the transformer model.
+
+        Args:
+            vocab_size (int) : The size of the vocabulary.
+            emb_dim (int) : The dimension of the embedding.
+        """
+        super().__init__()
+        self.embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=emb_dim)
+
+    @property
+    def embedding_dim(self):
+        """
+        Get the embedding dimension.
+
+        Returns:
+            int : The embedding dimension.
+        """
+        return self.embedding.embedding_dim
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the embedding layer.
+
+        Args:
+            x (torch.Tensor) : The input tensor.
+
+        Returns:
+            torch.Tensor : The output tensor.
+        """
+        model_logger.debug("Embedding: x shape: %s", x.size())
+        return self.embedding(x)
+    
+class GPTEmbedding(nn.Module):
+
+    def __init__(self):
+        """
+        Embedding layer for the GPT model.
+        """
+        super().__init__()
+        model = AutoModel.from_pretrained("gpt2")
+        self.embedding = model.wte
+        self.pe = model.wpe
+
+        # Freeze the parameters
+        for param in self.embedding.parameters():
+            param.requires_grad = False
+        for param in self.pe.parameters():
+            param.requires_grad = False
+
+    def __call__(self, x: torch.Tensor) -> torch.Tensor:
+        """
+        Forward pass of the embedding layer.
+
+        Args:
+            x (torch.Tensor) : The input tensor.
+
+        Returns:
+            torch.Tensor : The output tensor.
+        """
+        i = x.size(1)
+        emb = self.embedding(x)
+        pe = self.pe(torch.arange(i).unsqueeze(0).to(x.device))
+        return emb + pe
