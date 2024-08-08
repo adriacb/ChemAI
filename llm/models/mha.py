@@ -31,25 +31,19 @@ class AttentionBlock(nn.Module):
         
         Returns:
         - x: torch.Tensor of shape (batch_size, context_size, embedding_dim)"""
-        B, T, C = x.size()      # B: batch size, T: context size, C: embedding dimension
+        B, T, C = x.shape
+        k = self.key(x)
+        q = self.query(x)
+        wei = q @ k.transpose(-2, -1) * k.shape[-1] ** -0.5
+        tril = torch.tril(torch.ones(T, T, device=x.device))
+        wei = wei.masked_fill(tril == 0, float('-inf'))
+        wei = F.softmax(wei, dim=-1)
+        wei = self.dropout(wei)
+        v = self.value(x)
+        y = wei @ v
+        return y
 
-        query = self.query(x)
-        key = self.key(x)
-        value = self.value(x)
-
-        qk = query @ key.transpose(-2, -1) * C ** -0.5     # Q*K.T / sqrt(d_k)
-        attention = qk.masked_fill(                        # Masked softmax
-            mask=self.mask[:T, :T] == 0,                   # Lower triangular
-            value=float("-inf")                            # Masked value
-            )
-        attention = torch.softmax(attention, dim=-1)       # Softmax(Q*K.T / sqrt(d_k))
-        # dropout
-        attention = self.dropout(attention)
-        x = attention @ value                               # Softmax(Q*K.T / sqrt(d_k)) * V
-        return x
-
-
-class MultiAttentionBlock(nn.Module):
+class MultiHeadAttentionBlock(nn.Module):
     def __init__(self, embedding_dim: int, num_heads: int, context_size: int):
         """Initialize the multi-head attention block.
         Instead of performing a single attention operation, 
@@ -63,7 +57,7 @@ class MultiAttentionBlock(nn.Module):
         - embedding_dim: int - The dimension of the input embeddings
         - num_heads: int - The number of heads
         - context_size: int - The size of the context"""
-        super(MultiAttentionBlock, self).__init__()
+        super(MultiHeadAttentionBlock, self).__init__()
 
         head_dim = embedding_dim // num_heads
         assert head_dim * num_heads == embedding_dim, "Embedding dimension must be divisible by number of heads"
