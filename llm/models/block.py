@@ -1,38 +1,31 @@
 import torch
 import torch.nn as nn
 
-from llm.models.mha import AttentionBlock
+from llm.models.mha import MultiHeadAttentionBlock
 from llm.tools import PositionalEncoding
 from llm.logger import model_logger
 
 class FeedForward(nn.Module):
     def __init__(self, 
                  embedding_dim: int, 
-                 ff_dim: int):
-        """Initialize the feed-forward block.
-        
-        Args:
-        - embedding_dim: int - The dimension of the input embeddings
-        - ff_dim: int - The dimension of the feed-forward network"""
+                 dropout: float):
         super(FeedForward, self).__init__()
-
-        self.linear_1 = nn.Linear(embedding_dim, ff_dim)
-        self.relu = nn.ReLU()                           # Try with GeLU
-        self.linear_2 = nn.Linear(ff_dim, embedding_dim)
-        
+        self.ff = nn.Sequential(
+            nn.Linear(embedding_dim, embedding_dim * 4),
+            nn.ReLU(),
+            nn.Linear(embedding_dim * 4, embedding_dim),
+            nn.Dropout(dropout)
+        )
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass of the feed-forward block.
+        """Forward pass of the feed forward block.
 
         Args:
         - x: torch.Tensor of shape (batch_size, context_size, embedding_dim)
 
         Returns:
         - x: torch.Tensor of shape (batch_size, context_size, embedding_dim)"""
-        x = self.linear_1(x)
-        x = self.relu(x)
-        x = self.linear_2(x)
-        return x
+        return self.ff(x)
 
 class EncoderLayer(nn.Module):
     def __init__(self, d_model: int, num_heads: int, 
@@ -109,71 +102,56 @@ class Encoder(nn.Module):
         
         return x
     
-class DecoderLayer(nn.Module):
-    def __init__(self, embedding_dim: int,
-                 head_dim: int,
-                 context_size: int,
-                 ff_dim: int,
-                 dropout: float = 0.2):
-        """Initialize the decoder layer.
 
-        1- Multi-head attention block
-        2- Feed-forward block
-        3- Layer normalization
-        4- Layer normalization 
+class DecoderBlock(nn.Module):
+    def __init__(self,
+                embedding_dim: int,
+                num_heads: int,
+                context_size: int,
+                dropout: float):
+        super(DecoderBlock, self).__init__()
 
-        Args:
-        - embedding_dim: int - The dimension of the input embeddings
-        - head_dim: int - The dimension of the heads
-        - context_size: int - The size of the context
-        - ff_dim: int - The dimension of the feed-forward network
-        - dropout: float - The dropout rate"""
-        super(DecoderLayer, self).__init__()
-
-        self.attention = AttentionBlock(embedding_dim, head_dim, context_size)
-        self.feedforward = FeedForward(embedding_dim, ff_dim)
-        self.norm_1 = nn.LayerNorm(embedding_dim)
-        self.norm_2 = nn.LayerNorm(embedding_dim)
-        self.drop_shortcut = nn.Dropout(p=dropout)                     # Necessary?
+        self.mha = MultiHeadAttentionBlock(
+            embedding_dim=embedding_dim,
+            num_heads=num_heads,
+            context_size=context_size
+        )
+        self.ff = FeedForward(embedding_dim, dropout)
+        self.norm1 = nn.LayerNorm(embedding_dim)
+        self.norm2 = nn.LayerNorm(embedding_dim)
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """Forward pass of the decoder layer.
-
+        """Forward pass of the decoder block.
+        
         Args:
         - x: torch.Tensor of shape (batch_size, context_size, embedding_dim)
-
+        
         Returns:
         - x: torch.Tensor of shape (batch_size, context_size, embedding_dim)"""
-        # Shortcut connection for the attention block
-        shortcut = x                      # Shortcut connection
-        x = self.attention(x)             # Multi-head attention
-        x = self.drop_shortcut(x)         # Dropout
-        x = self.norm_1(x + shortcut)     # Layer normalization
-        # Shortcut connection for the feed-forward block
-        shortcut = x
-        x = self.feedforward(x)
-        x = self.drop_shortcut(x)
-        x = self.norm_2(x + shortcut)
+        x = x + self.mha(self.norm1(x))
+        x = x + self.ff(self.norm2(x))
         return x
-
+    
 class Decoder(nn.Module):
-    def __init__(self, n_layers: int, decoder: DecoderLayer):
-        """Initialize the decoder.
-
-        Args:
-        - n_layers: int - The number of decoder layers
-        - decoder: DecoderLayer - The decoder layer"""
+    def __init__(self,
+                n_layers: int,
+                embedding_dim: int,
+                context_size: int,
+                num_heads: int,
+                dropout: float):
         super(Decoder, self).__init__()
-        #        self.layers = nn.ModuleList([decoder for _ in range(n_layers)])
-        self.layers = nn.Sequential(*[decoder for _ in range(n_layers)])   # the difference between ModuleList and Sequential is that ModuleList is a list of modules, while Sequential is a module that contains modules
+        self.blocks = nn.Sequential(*[
+            DecoderBlock(embedding_dim, num_heads, context_size, dropout)
+            for _ in range(n_layers)
+        ])
+
     
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass of the decoder.
-
+        
         Args:
         - x: torch.Tensor of shape (batch_size, context_size, embedding_dim)
-
+        
         Returns:
         - x: torch.Tensor of shape (batch_size, context_size, embedding_dim)"""
-        model_logger.debug(f"Decoder input shape: {x.size()}")
-        return self.layers(x)
+        return self.blocks(x)

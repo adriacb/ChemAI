@@ -1,7 +1,9 @@
 
+import re
 from transformers import AutoTokenizer
+from pydantic import BaseModel, Field
+from typing import List, Dict
 
-from typing import Dict, List
 # https://github.com/MTxSouza/MediumArticleGenerator/blob/main/model/tokenizer.py
 
 class Tokenizer:
@@ -80,77 +82,108 @@ class Tokenizer:
         """
         taged_text = self.SOS + text + self.EOS + self.SOA
 
-class StructTokenizer:
-    SOS = "<s>"
-    EOS = "<eos>"
-    UNK = "<unk>"
-    PROT = "<PROTEIN>"
-    LIG = "<LIGAND>"
-    SOA = "<$$$$>"
+class LigandTokenizer(BaseModel):
+    """
+    Tokenizer for ligand SMILES and atom coordinates.
 
-    special_tokens_ = [SOS, EOS, UNK, PROT, LIG]
+    ```
+    input_text = '''
+    <LIGAND>
+    Cn1c(=O)c2c(ncn2C)n(C)c1=O
+    <XYZ>
+    C 3.0151 -1.4072 0.0796
+    N 1.5857 -1.4661 -0.0918
+    <eos>
+    '''
 
+    tokenizer = LigandTokenizer(prompt=input_text)
+    tokens = tokenizer.tokenize()
+    print(tokens)
+    ```
 
-    def __init__(self, vocab: Dict[str, int]):
-        self.vocab = vocab
-        self.vocab_encode = {str(k): int(v) for k, v in vocab.items()}
-        self.vocab_decode = {int(v): str(k) for k, v in vocab.items()}
-
-    @staticmethod
-    def create_vocab(corpus: str) -> Dict[str, int]:
-        """
-        Create a vocabulary from the given corpus.
-
-        Args:
-        - corpus: str
-
-        Returns:
-        - vocab: Dict[str, int]
-        """
-        # TODO: Implement the create_vocab method
-        raise NotImplementedError
+    """
+    # Maps to convert tokens to indices and vice versa
+    token_to_id: Dict[str, int] = Field(default_factory=dict)
+    id_to_token: Dict[int, str] = Field(default_factory=dict)
     
-    def encode(self, text: str) -> List[int]:
+    def tokenize_ligand(self, ligand: str) -> List[str]:
         """
-        Encode the given indices.
-
-        Args:
-        - indices: List[int]
-
-        Returns:
-        - tokens: List[str]
+        Tokenizes the SMILES string where each character is a separate token.
         """
-        # TODO: Implement the encode method
-        raise NotImplementedError
+        return list(ligand)
     
-    def decode(self, indices: List[int]) -> str:
+    def tokenize_coordinates(self, line: str) -> List[str]:
         """
-        Decode the given tokens.
-
-        Args:
-        - tokens: List[str]
-
-        Returns:
-        - text: str
+        Tokenizes the atom and its coordinates.
+        Splits the atom label as a token and each part of the coordinate as separate tokens.
         """
-        # TODO: Implement the decode method
-        raise NotImplementedError
-
-    def __len__(self) -> int:
-        return len(self.vocab)
-
+        parts = line.split()
+        tokens = []
+        for part in parts:
+            if re.match(r'^[A-Z][a-z]?', part):  # Atom labels like C, N, O
+                tokens.append(part)
+            else:
+                # Split number into integer and fractional parts
+                if '.' in part:
+                    integer_part, fractional_part = part.split('.')
+                    tokens.append(integer_part)
+                    tokens.append(f".{fractional_part}")
+                else:
+                    tokens.append(part)
+        return tokens
+    
     def tokenize(self, text: str) -> List[str]:
         """
-        Tokenize the given text.
-
-        Args:
-        - text: str
-
-        Returns:
-        - tokens: List[str]
+        Main method to tokenize the entire input text based on defined rules.
         """
-        taged_text = self.SOS + text + self.EOS + self.SOA
-
+        tokens = []
+        lines = text.strip().split('\n')
+        
+        processing_smiles = False
+        
+        for line in lines:
+            line = line.strip()
+            if line in ['<LIGAND>', '<XYZ>', '<eos>']:
+                tokens.append(line)
+                if line == '<LIGAND>':
+                    processing_smiles = True
+                elif line == '<XYZ>':
+                    processing_smiles = False
+            elif processing_smiles:
+                tokens.extend(self.tokenize_ligand(line))
+                processing_smiles = False  # End processing SMILES after first line
+            elif line[0].isupper():  # Likely an atom coordinate line
+                tokens.extend(self.tokenize_coordinates(line))
+        
+        return tokens
+    
+    def build_vocab(self, texts: List[str]) -> None:
+        """
+        Build a vocabulary from a list of input texts.
+        """
+        all_tokens = []
+        for text in texts:
+            tokens = self.tokenize(text)
+            all_tokens.extend(tokens)
+        unique_tokens = set(all_tokens)
+        self.token_to_id = {token: idx for idx, token in enumerate(unique_tokens)}
+        self.id_to_token = {idx: token for token, idx in self.token_to_id.items()}
+    
+    def encode(self, tokens: List[str]) -> List[int]:
+        """
+        Encode tokens into a list of integers based on the vocabulary.
+        """
+        if not self.token_to_id:
+            raise ValueError("Vocabulary not built. Call `build_vocab` first.")
+        return [self.token_to_id.get(token, self.token_to_id.get('<UNK>')) for token in tokens]
+    
+    def decode(self, indices: List[int]) -> List[str]:
+        """
+        Decode a list of integers back into tokens.
+        """
+        if not self.id_to_token:
+            raise ValueError("Vocabulary not built. Call `build_vocab` first.")
+        return [self.id_to_token.get(idx, '<UNK>') for idx in indices]
 
 class GPTTokenizer:
 

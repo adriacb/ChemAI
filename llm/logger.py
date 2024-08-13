@@ -6,8 +6,11 @@ import os
 
 class Logger(logging.Logger):
 
-    log_dirpath = "./model/logs"
-    if not os.path.exists(path=log_dirpath):
+    log_dirpath = "./models/logs"
+    log_dirpath = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), log_dirpath)
+    )
+    if not os.path.exists(log_dirpath):
         os.mkdir(path=log_dirpath)
 
     def __init__(self, filename: str, logger_name: str, mode: str = "w"):
@@ -34,4 +37,4 @@ class Logger(logging.Logger):
 
 
 # loggers
-model_logger = Logger(filename="model", logger_name="model_logger")
+model_logger = Logger(filename="llm.model", logger_name="llm_logger")

@@ -1,0 +1,2 @@
+(llm_logger)[WARNING ]: 2024-08-13 12:39:58,983 - Vocabulary size: 24463 ; module `train` in line 50
+(llm_logger)[WARNING ]: 2024-08-13 12:39:59,043 - Number of tokens: 102876 ; module `train` in line 60
