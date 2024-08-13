@@ -1,2 +1,5 @@
-(llm_logger)[WARNING ]: 2024-08-13 12:39:58,983 - Vocabulary size: 24463 ; module `train` in line 50
-(llm_logger)[WARNING ]: 2024-08-13 12:39:59,043 - Number of tokens: 102876 ; module `train` in line 60
+(llm_logger)[INFO    ]: 2024-08-13 15:28:19,679 - Testing the feed forward block. ; module `test_llm` in line 16
+(llm_logger)[INFO    ]: 2024-08-13 15:28:19,697 - Testing the multi-head attention block. ; module `test_llm` in line 23
+(llm_logger)[INFO    ]: 2024-08-13 15:28:19,713 - Testing the attention block. ; module `test_llm` in line 34
+(llm_logger)[INFO    ]: 2024-08-13 15:28:19,716 - Testing the decoder. ; module `test_llm` in line 62
+(llm_logger)[INFO    ]: 2024-08-13 15:28:19,868 - Testing the decoder transformer. ; module `test_llm` in line 75

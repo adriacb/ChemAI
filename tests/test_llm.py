@@ -76,8 +76,8 @@ def test_decoder_transformer():
     decoder = DecoderTransformer(
         vocab_size=1000,
         n_layers=6,
-        embedding_dim=512,
-        num_heads=8,
+        embedding_dim=512,  # Ensure this is divisible by num_heads
+        num_heads=8,  # Keep this consistent
         context_size=10,
         dropout=0.1
     )
