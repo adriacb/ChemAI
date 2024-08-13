@@ -3,10 +3,12 @@ import sys
 import yaml
 import torch
 import torch.nn as nn
+
 import argparse
 from logger import model_logger
-from typing import List, Dict
+from typing import Tuple
 from tokenizer import LigandTokenizer
+from preprocessing.loader import create_data_loader
 
 PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 sys.path.append(PATH)
@@ -45,28 +47,68 @@ def load_data(path: str) -> str:
         data = file.read()
     return data
 
+def split_data(data: str, ratio: float = 0.8) -> Tuple[str, str]:
+    """
+    Split the data into training and validation sets.
+    following this format:
+    ```
+    <LIGAND>
+    smiles
+    <XYZ>
+    x y z
+    <eos>
+    ```
+    """
+    lines = data.strip().split("\n")
+    ligands = []
+    ligand = []
+    for line in lines:
+        if line == "<LIGAND>":
+            ligand = []
+        elif line == "<XYZ>":
+            ligands.append(ligand)
+        else:
+            ligand.append(line)
+    n_train = int(ratio * len(ligands))
+    train_data = "\n".join(["\n".join(ligand) for ligand in ligands[:n_train]])
+    val_data = "\n".join(["\n".join(ligand) for ligand in ligands[n_train:]])
+
+    return train_data, val_data
+
 def train(
         config: dict,
-        data: str
+        data: str,
+        seed: int = 1234,
+        device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ):
-    torch.random.manual_seed(seed=1234)
+    torch.random.manual_seed(seed=seed)
     
     if data is None or len(data) == 0:
         raise ValueError("The training data is empty.")
     
     vocab_size = len(set(data.split()))
     msg = f"Vocabulary size: {vocab_size}"
-    model_logger.warning(msg)
+    model_logger.info(msg)
 
-    # tokenizer
-    tokenizer = LigandTokenizer()
-    tokenizer.build_vocab([data])
+    # split data
+    train_data, val_data = split_data(data)
 
-    tokens = tokenizer.tokenize(data)
-    encoded_data = tokenizer.encode(tokens)
-
-    msg = f"Number of tokens: {len(tokens)}"
-    model_logger.warning(msg)
+    # data loader
+    train_loader = create_data_loader(
+        input=train_data, 
+        batch_size=config["batch_size"], 
+        max_tokens=config["max_tokens"], 
+        stride=config["stride"]
+    )
+    val_loader = create_data_loader(
+        input=val_data, 
+        batch_size=config["batch_size"], 
+        max_tokens=config["max_tokens"], 
+        stride=config["stride"]
+    )
+    len_train, len_val = len(train_loader), len(val_loader)
+    model_logger.info(f"Number of training batches: {len_train}")
+    model_logger.info(f"Number of validation batches: {len_val}")
 
     # model
     model = DecoderTransformer(
@@ -77,14 +119,13 @@ def train(
             context_size=config["context_size"],                        # Size of the context window
             dropout=config["dropout"],                                  # Dropout probability
             )
-    model.to(device=config["device"])
+    model.to(device=device)
     # lr, optimizer, scheduler
     optimizer = torch.optim.AdamW(
         model.parameters(), 
         lr=float(config["lr"]), 
         weight_decay=config["weight_decay"]
     )    
-
 
 
 def load_config(path: str) -> dict:

@@ -6,12 +6,15 @@ DecoderTransformer:
   num_heads: 12
   context_size: 256
   dropout: 0.2
-  device: cuda
   # training parameters
   batch_size: 2
   epochs: 4
   lr: 5e-4
   weight_decay: 0.01
+  train_ratio: 0.8
+  # tokenizer parameters
+  max_tokens: 256
+  stride: 32
 
 # training parameters
 # Flash-attention (Dao, 2023) or DeepSpeed (Rasley et al., 2020), nor the algorithimic ones, such as learning rate

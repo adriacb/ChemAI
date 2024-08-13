@@ -82,25 +82,13 @@ class Tokenizer:
         """
         taged_text = self.SOS + text + self.EOS + self.SOA
 
+import re
+from typing import List, Dict
+from pydantic import BaseModel, Field
+
 class LigandTokenizer(BaseModel):
     """
     Tokenizer for ligand SMILES and atom coordinates.
-
-    ```
-    input_text = '''
-    <LIGAND>
-    Cn1c(=O)c2c(ncn2C)n(C)c1=O
-    <XYZ>
-    C 3.0151 -1.4072 0.0796
-    N 1.5857 -1.4661 -0.0918
-    <eos>
-    '''
-
-    tokenizer = LigandTokenizer(prompt=input_text)
-    tokens = tokenizer.tokenize()
-    print(tokens)
-    ```
-
     """
     # Maps to convert tokens to indices and vice versa
     token_to_id: Dict[str, int] = Field(default_factory=dict)
@@ -135,6 +123,7 @@ class LigandTokenizer(BaseModel):
     def tokenize(self, text: str) -> List[str]:
         """
         Main method to tokenize the entire input text based on defined rules.
+        Now supports multiple series of <LIGAND> and <XYZ> blocks.
         """
         tokens = []
         lines = text.strip().split('\n')
@@ -143,12 +132,15 @@ class LigandTokenizer(BaseModel):
         
         for line in lines:
             line = line.strip()
-            if line in ['<LIGAND>', '<XYZ>', '<eos>']:
+            if line == '<LIGAND>':
                 tokens.append(line)
-                if line == '<LIGAND>':
-                    processing_smiles = True
-                elif line == '<XYZ>':
-                    processing_smiles = False
+                processing_smiles = True
+            elif line == '<XYZ>':
+                tokens.append(line)
+                processing_smiles = False
+            elif line == '<eos>':
+                tokens.append(line)
+                processing_smiles = False  # Reset in case there's another series
             elif processing_smiles:
                 tokens.extend(self.tokenize_ligand(line))
                 processing_smiles = False  # End processing SMILES after first line
