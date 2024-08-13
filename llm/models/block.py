@@ -110,11 +110,21 @@ class DecoderBlock(nn.Module):
                 context_size: int,
                 dropout: float):
         super(DecoderBlock, self).__init__()
+<<<<<<< HEAD
 
         self.mha = MultiHeadAttentionBlock(
             embedding_dim=embedding_dim,
             num_heads=num_heads,
             context_size=context_size
+=======
+        head_size = embedding_dim // num_heads
+        self.mha = MultiHeadAttentionBlock(
+            embedding_dim=embedding_dim,
+            num_heads=num_heads,
+            head_size=head_size,
+            context_size=context_size,
+            dropout=dropout
+>>>>>>> 13713dd805e0bcd75160628c11a5435c4248e97c
         )
         self.ff = FeedForward(embedding_dim, dropout)
         self.norm1 = nn.LayerNorm(embedding_dim)
@@ -154,4 +164,8 @@ class Decoder(nn.Module):
         
         Returns:
         - x: torch.Tensor of shape (batch_size, context_size, embedding_dim)"""
+<<<<<<< HEAD
         return self.blocks(x)
+=======
+        return self.blocks(x)
+>>>>>>> 13713dd805e0bcd75160628c11a5435c4248e97c

@@ -3,19 +3,18 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple
 
-from llm.tools import PositionalEncoding
-from llm.models.block import Decoder
+from .block import Decoder
 
 class DecoderTransformer(nn.Module):
     # GPT-2 like transformer
     def __init__(self,
-                 vocab_size: int,          # size of the vocabulary
-                 n_layers: int,            # number of layers    
-                 embedding_dim: int,       # size of the embeddings
-                 num_heads: int,           # number of heads
-                 context_size: int,        # size of the context
-                 dropout: float):          # dropout rate
-        super(DecoderTransformer, self).__init__()
+                 vocab_size: int,          # Add vocab_size as parameter
+                 n_layers: int,
+                 embedding_dim: int,
+                 num_heads: int,
+                 context_size: int,
+                 dropout: float):
+        super(DecoderTransformer, self).__init__()  # Initialize parent class
         self.context_size = context_size
         # embedding layer
         self.embedding = nn.Embedding(vocab_size, embedding_dim)
@@ -23,12 +22,11 @@ class DecoderTransformer(nn.Module):
         self.pos_embedding = nn.Embedding(context_size, embedding_dim)
         # decoder
         self.decoder = Decoder(
-            n_layers=n_layers,
-            embedding_dim=embedding_dim,
-            num_heads=num_heads,
-            context_size=context_size,
-            dropout=dropout
-        )
+            n_layers, 
+            embedding_dim, 
+            num_heads, 
+            context_size, 
+            dropout)
         self.norm = nn.LayerNorm(embedding_dim)
         # output layer
         self.output = nn.Linear(embedding_dim, vocab_size)

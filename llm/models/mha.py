@@ -51,9 +51,7 @@ class AttentionBlock(nn.Module):
         return y
 
 class MultiHeadAttentionBlock(nn.Module):
-    def __init__(self, embedding_dim: int, 
-                 num_heads: int, 
-                 context_size: int):
+    def __init__(self, embedding_dim: int, num_heads: int, context_size: int):
         """Initialize the multi-head attention block.
         Instead of performing a single attention operation, 
         the input embeddings are split into multiple heads and 
