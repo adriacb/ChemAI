@@ -11,6 +11,8 @@ DecoderTransformer:
   epochs: 4
   lr: 5e-4
   weight_decay: 0.01
+  eval_steps: 200
+  eval_iter: 2000
   train_ratio: 0.8
   # tokenizer parameters
   max_tokens: 256

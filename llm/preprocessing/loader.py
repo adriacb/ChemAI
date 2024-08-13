@@ -47,8 +47,15 @@ class MoleculeDatasetLoader:
         return self.input_ids[idx], self.target_ids[idx]
     
 
-def create_data_loader(input: str, batch_size: int, max_tokens: int, stride: int,
-                       shuffle: bool = True, drop_last: bool = True, num_workers: int = 0) -> DataLoader:
+def create_data_loader(input: str, 
+                       batch_size: int, 
+                       max_tokens: int, 
+                       stride: int,
+                       shuffle: bool = True, 
+                       drop_last: bool = True, 
+                       num_workers: int = 0,
+                       tokenizer: LigandTokenizer = None
+                       ) -> DataLoader:
     """Create a DataLoader for the given input data.
 
     Args:
@@ -66,9 +73,9 @@ def create_data_loader(input: str, batch_size: int, max_tokens: int, stride: int
     if len(input) == 0:
         raise ValueError("The input data is empty.")
 
-    tokenizer = LigandTokenizer()
-    tokenizer.build_vocab([input])
-
+    if tokenizer is None:
+        raise ValueError("The tokenizer is not provided.")
+    
     dataset = MoleculeDatasetLoader(
         input, tokenizer, max_tokens, stride)
     

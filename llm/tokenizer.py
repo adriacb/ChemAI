@@ -1,5 +1,6 @@
-
 import re
+import torch
+import json
 from transformers import AutoTokenizer
 from pydantic import BaseModel, Field
 from typing import List, Dict
@@ -142,7 +143,7 @@ class LigandTokenizer(BaseModel):
                 tokens.append(line)
                 processing_smiles = False  # Reset in case there's another series
             elif processing_smiles:
-                tokens.extend(self.tokenize_ligand(line))
+                tokens.extend(self.tokenize_ligand(line))  # Correctly tokenize SMILES
                 processing_smiles = False  # End processing SMILES after first line
             elif line[0].isupper():  # Likely an atom coordinate line
                 tokens.extend(self.tokenize_coordinates(line))
@@ -175,7 +176,45 @@ class LigandTokenizer(BaseModel):
         """
         if not self.id_to_token:
             raise ValueError("Vocabulary not built. Call `build_vocab` first.")
+        print(type(indices[0]))
         return [self.id_to_token.get(idx, '<UNK>') for idx in indices]
+    
+    def decode_tkn(self, idx: torch.Tensor) -> List[str]:
+        """
+        Decode a tensor of integers back into tokens.
+        """
+        if not self.id_to_token:
+            raise ValueError("Vocabulary not built. Call `build_vocab` first.")
+        
+        if idx.dim() > 1:
+            idx = idx.squeeze(0)
+            return [self.id_to_token.get(int(idx[i].item()), '<UNK>') for i in range(idx.size(0))]
+        else:
+            return [self.id_to_token.get(int(idx[i].item()), '<UNK>') for i in range(idx.size(0))]
+
+    
+    def save(self, path: str) -> None:
+        """
+        Save the tokenizer to a JSON file.
+        """
+        with open(path, 'w') as f:
+            json.dump({
+                'token_to_id': self.token_to_id,
+                'id_to_token': self.id_to_token
+            }, f)
+
+    @classmethod
+    def load(cls, path: str) -> 'LigandTokenizer':
+        """
+        Load the tokenizer from a JSON file.
+        """
+        with open(path, 'r') as f:
+            data = json.load(f)
+        return cls(
+            token_to_id=data['token_to_id'],
+            id_to_token=data['id_to_token']
+        )
+
 
 class GPTTokenizer:
 
