@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Tuple
+from typing import Tuple, Optional
 
 from .block import Decoder
 
@@ -73,7 +73,7 @@ class DecoderTransformer(nn.Module):
             loss = F.cross_entropy(logits, targets, ignore_index=0)
         
         return logits, loss
-    
+
     def generate(
             self,
             idx: torch.Tensor,           # idx of shape (batch_size, context_size)

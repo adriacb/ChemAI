@@ -25,12 +25,18 @@ class MoleculeDatasetLoader:
 
         self.input_ids = []
         self.target_ids = []
-        
+
         tokens = self.tokenizer.tokenize(text)
         token_ids = self.tokenizer.encode(tokens)
+        
+        if None in token_ids:
+            raise ValueError(
+                "The token IDs contain None values. " \
+                "Please check the tokenization process."
+                )
 
         msg = f"Number of tokens: {len(token_ids)}"
-        model_logger.warning(msg)
+        model_logger.info(msg)
 
         for i in range(0, len(token_ids) - max_tokens, stride):
             input_chunk = token_ids[i:i+max_tokens]           # input chunk of size max_tokens
@@ -75,7 +81,7 @@ def create_data_loader(input: str,
 
     if tokenizer is None:
         raise ValueError("The tokenizer is not provided.")
-    
+
     dataset = MoleculeDatasetLoader(
         input, tokenizer, max_tokens, stride)
     

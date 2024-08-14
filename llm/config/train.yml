@@ -1,9 +1,9 @@
 # yaml config file for training
 DecoderTransformer:
-  # model parameters
-  embedding_dim: 768
+  # model parameters 
+  embedding_dim: 768   # embedding_dim // num_heads, Embedding dimension must be divisible by number of heads
   n_layers: 12
-  num_heads: 12
+  num_heads: 12        # number of heads in multi-head attention
   context_size: 256
   dropout: 0.2
   # training parameters
@@ -18,10 +18,5 @@ DecoderTransformer:
   max_tokens: 256
   stride: 32
 
-# training parameters
 # Flash-attention (Dao, 2023) or DeepSpeed (Rasley et al., 2020), nor the algorithimic ones, such as learning rate
 # scaling. Our work aims to fill this gap by demonstrating the effectiveness of the pretraining for 3D drug discovery.
-Training:
-  batch_size: 10000                  # token batch size
-  epochs: 4                          # number of epochs
-  lr: 0.0001                         # learning rate

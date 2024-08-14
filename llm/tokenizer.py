@@ -83,13 +83,25 @@ class Tokenizer:
         """
         taged_text = self.SOS + text + self.EOS + self.SOA
 
-import re
-from typing import List, Dict
-from pydantic import BaseModel, Field
-
 class LigandTokenizer(BaseModel):
     """
     Tokenizer for ligand SMILES and atom coordinates.
+
+    Example usage:
+    ```
+    input_text = '''
+    <LIGAND>
+    Cn1c(=O)c2c(ncn2C)n(C)c1=O
+    <XYZ>
+    C 3.0151 -1.4072 0.0796
+    N 1.5857 -1.4661 -0.0918
+    <eos>
+    '''
+
+    tokenizer = LigandTokenizer()
+    tokens = tokenizer.tokenize(input_text)
+    print(tokens)
+    ```
     """
     # Maps to convert tokens to indices and vice versa
     token_to_id: Dict[str, int] = Field(default_factory=dict)
@@ -124,7 +136,6 @@ class LigandTokenizer(BaseModel):
     def tokenize(self, text: str) -> List[str]:
         """
         Main method to tokenize the entire input text based on defined rules.
-        Now supports multiple series of <LIGAND> and <XYZ> blocks.
         """
         tokens = []
         lines = text.strip().split('\n')
@@ -133,19 +144,17 @@ class LigandTokenizer(BaseModel):
         
         for line in lines:
             line = line.strip()
-            if line == '<LIGAND>':
+            if line in ['<LIGAND>', '<XYZ>', '<eos>']:
                 tokens.append(line)
-                processing_smiles = True
-            elif line == '<XYZ>':
-                tokens.append(line)
-                processing_smiles = False
-            elif line == '<eos>':
-                tokens.append(line)
-                processing_smiles = False  # Reset in case there's another series
+                if line == '<LIGAND>':
+                    processing_smiles = True
+                elif line == '<XYZ>':
+                    processing_smiles = False
             elif processing_smiles:
-                tokens.extend(self.tokenize_ligand(line))  # Correctly tokenize SMILES
+
+                tokens.extend(self.tokenize_ligand(line))
                 processing_smiles = False  # End processing SMILES after first line
-            elif line[0].isupper():  # Likely an atom coordinate line
+            elif line and line[0].isupper():  # Likely an atom coordinate line
                 tokens.extend(self.tokenize_coordinates(line))
         
         return tokens
@@ -158,7 +167,7 @@ class LigandTokenizer(BaseModel):
         for text in texts:
             tokens = self.tokenize(text)
             all_tokens.extend(tokens)
-        unique_tokens = set(all_tokens)
+        unique_tokens = sorted(set(all_tokens))
         self.token_to_id = {token: idx for idx, token in enumerate(unique_tokens)}
         self.id_to_token = {idx: token for token, idx in self.token_to_id.items()}
     
@@ -176,7 +185,6 @@ class LigandTokenizer(BaseModel):
         """
         if not self.id_to_token:
             raise ValueError("Vocabulary not built. Call `build_vocab` first.")
-        print(type(indices[0]))
         return [self.id_to_token.get(idx, '<UNK>') for idx in indices]
     
     def decode_tkn(self, idx: torch.Tensor) -> List[str]:
@@ -191,8 +199,7 @@ class LigandTokenizer(BaseModel):
             return [self.id_to_token.get(int(idx[i].item()), '<UNK>') for i in range(idx.size(0))]
         else:
             return [self.id_to_token.get(int(idx[i].item()), '<UNK>') for i in range(idx.size(0))]
-
-    
+        
     def save(self, path: str) -> None:
         """
         Save the tokenizer to a JSON file.
@@ -208,12 +215,10 @@ class LigandTokenizer(BaseModel):
         """
         Load the tokenizer from a JSON file.
         """
+        # usage LigandTokenizer.load("tokenizer.json")
         with open(path, 'r') as f:
             data = json.load(f)
-        return cls(
-            token_to_id=data['token_to_id'],
-            id_to_token=data['id_to_token']
-        )
+        return cls(**data)
 
 
 class GPTTokenizer:

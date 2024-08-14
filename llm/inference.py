@@ -107,11 +107,42 @@ def generate(model: nn.Module, idx: torch.Tensor, max_len: int = 100, temperatur
         # focus only on the last time step
         logits = logits[:, -1, :]               # becomes (B, C)
         # apply temperature
-        logits = logits / temperature           # used to control the randomness of the sampling
+        logits = logits / max(temperature, 1e-5)           # used to control the randomness of the sampling
         # apply softmax
         probs = F.softmax(logits, dim=-1)       # (B, C)
         # sample the next token
         next_token = torch.multinomial(probs, num_samples=1) # (B, 1)
+        # concatenate the new token
+        idx = torch.cat([idx, next_token], dim=-1)
+    return idx
+
+def cached_generate(
+        model: nn.Module, 
+        idx: torch.Tensor, 
+        max_len: int = 100, 
+        temperature: float = 1.0) -> torch.Tensor:
+    """Generate a sequence of tokens using the given model."""
+    past_key_values = None
+
+    for _ in range(max_len):
+        # extract the last context size tokens
+        idx_cond = idx[:, -model.context_size:]  # (B, T)
+
+        # pass past_key_values to the model (None for the first iteration)
+        outputs = model(input_ids=idx_cond, past_key_values=past_key_values)
+
+        #extrect the logits
+        logits = outputs.logits
+        past_key_values = outputs.past_key_values
+
+        # focus only on the last time step
+        logits = logits[:, -1, :]               # becomes (B, C)
+        # apply temperature
+        logits = logits / max(temperature, 1e-5)           # used to control the randomness of the sampling
+        # apply softmax
+        probs = F.softmax(logits, dim=-1)       # (B, C)
+        # sample the next token
+        next_token = torch.multinomial(probs, num_samples=1)
         # concatenate the new token
         idx = torch.cat([idx, next_token], dim=-1)
     return idx
@@ -129,6 +160,7 @@ def main():
     # load the tokenizer
     tokenizer = LigandTokenizer.load("tokenizer.json")
 
+
     if args.input:
         tokens = tokenizer.tokenize(args.input)
         idx = tokenizer.encode(tokens)
@@ -141,18 +173,15 @@ def main():
     else:
         raise ValueError("Please provide an input sequence.")
     
-    # generated_idx = model.generate(
-    #     idx, 
-    #     args.max_len, 
-    #     args.temperature
-    #     )
+
+    ## TRAIN MORE TO GET BETTER RESULTS
     generated_idx = generate(
         model,
         idx,
         args.max_len,
         args.temperature
     )
-    
+    #generated_text = tokenizer.decode(generated_idx)
     generated_text = tokenizer.decode_tkn(generated_idx)
     print(generated_text)
     xyz_block = format_output(generated_text)
@@ -160,3 +189,12 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# kv cache:
+# https://gist.github.com/ArthurZucker/af34221def212259b43d55a2811d2dbb
+
+# continuous batching:
+# https://www.anyscale.com/blog/continuous-batching-llm-inference
+
+# Quantization:
