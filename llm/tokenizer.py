@@ -1,3 +1,4 @@
+import os
 import re
 import torch
 import json
@@ -103,7 +104,6 @@ class LigandTokenizer(BaseModel):
     print(tokens)
     ```
     """
-    # Maps to convert tokens to indices and vice versa
     token_to_id: Dict[str, int] = Field(default_factory=dict)
     id_to_token: Dict[int, str] = Field(default_factory=dict)
     
@@ -118,19 +118,22 @@ class LigandTokenizer(BaseModel):
         Tokenizes the atom and its coordinates.
         Splits the atom label as a token and each part of the coordinate as separate tokens.
         """
-        parts = line.split()
+        parts = re.split(r'(\s+)', line)  # Preserve spaces as tokens
         tokens = []
         for part in parts:
-            if re.match(r'^[A-Z][a-z]?', part):  # Atom labels like C, N, O
-                tokens.append(part)
-            else:
-                # Split number into integer and fractional parts
-                if '.' in part:
-                    integer_part, fractional_part = part.split('.')
-                    tokens.append(integer_part)
-                    tokens.append(f".{fractional_part}")
-                else:
+            if part.strip():  # Non-whitespace part
+                if re.match(r'^[A-Z][a-z]?', part):  # Atom labels like C, N, O
                     tokens.append(part)
+                else:
+                    # Split number into integer and fractional parts
+                    if '.' in part:
+                        integer_part, fractional_part = part.split('.')
+                        tokens.append(integer_part)
+                        tokens.append(f".{fractional_part}")
+                    else:
+                        tokens.append(part)
+            else:
+                tokens.append(part)  # Add space as a token
         return tokens
     
     def tokenize(self, text: str) -> List[str]:
@@ -138,11 +141,15 @@ class LigandTokenizer(BaseModel):
         Main method to tokenize the entire input text based on defined rules.
         """
         tokens = []
-        lines = text.strip().split('\n')
+        lines = re.split(r'(\n)', text)  # Preserve newlines as tokens
         
         processing_smiles = False
         
         for line in lines:
+            if line == '\n':
+                tokens.append(line)
+                continue
+            
             line = line.strip()
             if line in ['<LIGAND>', '<XYZ>', '<eos>']:
                 tokens.append(line)
@@ -151,12 +158,11 @@ class LigandTokenizer(BaseModel):
                 elif line == '<XYZ>':
                     processing_smiles = False
             elif processing_smiles:
-
                 tokens.extend(self.tokenize_ligand(line))
-                processing_smiles = False  # End processing SMILES after first line
+                processing_smiles = False
             elif line and line[0].isupper():  # Likely an atom coordinate line
                 tokens.extend(self.tokenize_coordinates(line))
-        
+
         return tokens
     
     def build_vocab(self, texts: List[str]) -> None:
@@ -204,6 +210,11 @@ class LigandTokenizer(BaseModel):
         """
         Save the tokenizer to a JSON file.
         """
+        # check if already exists
+        if os.path.exists(path):
+            print(f"Removing existing file: {path}")
+            os.remove(path)
+        
         with open(path, 'w') as f:
             json.dump({
                 'token_to_id': self.token_to_id,
@@ -219,7 +230,6 @@ class LigandTokenizer(BaseModel):
         with open(path, 'r') as f:
             data = json.load(f)
         return cls(**data)
-
 
 class GPTTokenizer:
 

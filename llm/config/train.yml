@@ -2,21 +2,26 @@
 DecoderTransformer:
   # model parameters 
   embedding_dim: 768   # embedding_dim // num_heads, Embedding dimension must be divisible by number of heads
-  n_layers: 12
+  n_layers: 12         # number of layers in the transformer
   num_heads: 12        # number of heads in multi-head attention
-  context_size: 256
+  context_size: 256    # context size for the transformer
   dropout: 0.2
+  qkv_bias: True       # whether to include bias in qkv projection (TODO)
+training:
   # training parameters
-  batch_size: 2
-  epochs: 4
+  batch_size: 8
+  epochs: 1
   lr: 5e-4
   weight_decay: 0.01
   eval_steps: 200
   eval_iter: 2000
   train_ratio: 0.8
+tokenizer:
   # tokenizer parameters
-  max_tokens: 256
+  max_tokens: 512
   stride: 32
+data_loader:
+  num_workers: 12
 
 # Flash-attention (Dao, 2023) or DeepSpeed (Rasley et al., 2020), nor the algorithimic ones, such as learning rate
 # scaling. Our work aims to fill this gap by demonstrating the effectiveness of the pretraining for 3D drug discovery.

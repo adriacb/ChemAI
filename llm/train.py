@@ -5,15 +5,18 @@ import torch
 import argparse
 import torch.nn as nn
 from tqdm import tqdm
-from typing import Tuple
+from typing import List, Tuple
+import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter  # For TensorBoard
+
 from logger import model_logger
 from tokenizer import LigandTokenizer
 from preprocessing.loader import create_data_loader
 PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 sys.path.append(PATH)
 from llm.models.transformer import DecoderTransformer
+from llm.inference import generate
 
 CONFIG_TRAIN_PATH = os.path.abspath(
     os.path.join(os.path.dirname(__file__), "config", "train.yml")
@@ -43,7 +46,33 @@ def parse_args():
     args = parser.parse_args()
     return args
 
-def calc_loss_loader(loader: DataLoader, model: nn.Module, device: torch.device, eval_iter: int = None) -> float:
+def plot_losses(train_losses: List[float], 
+                val_losses: List[float], 
+                epochs_seen: List[int], 
+                tokens_seen: List[int]
+                ) -> None:
+    fig, ax1 = plt.subplots()
+    #plot training and validation loss against epochs
+    ax1.plot(epochs_seen, train_losses, label="Train loss", color="blue", linestyle="--")
+    ax1.plot(epochs_seen, val_losses, label="Val loss", color="red", linestyle="--")
+    ax1.set_xlabel("Epochs")
+    ax1.set_ylabel("Loss")
+    ax1.legend(loc="upper rihgt")
+
+    # create a second x-axis for tokens seen
+    ax2 = ax1.twiny()
+    ax2.plot(tokens_seen, train_losses, alpha=0)
+    ax2.set_xlabel("Tokens seen")
+
+    fig.tight_layout()
+    plt.savefig("losses.png")
+    
+
+def calc_loss_loader(loader: 
+                     DataLoader, 
+                     model: nn.Module, 
+                     device: torch.device, 
+                     eval_iter: int = None) -> float:
     total_loss = 0.0
 
     if len(loader) == 0:
@@ -85,7 +114,6 @@ def calc_loss_batch(
     loss = nn.functional.cross_entropy(logits[0].flatten(0, 1), target_batch.flatten())
     return loss
     
-
 def load_config(path: str) -> dict:
     with open(path, "r") as file:
         config = yaml.safe_load(file)
@@ -96,49 +124,11 @@ def load_data(path: str) -> str:
         data = file.read()
     return data
 
-def split_data(data: str, ratio: float = 0.8) -> Tuple[str, str]:
-    """
-    Split the data into training and validation sets.
-    The format should be:
-    
-    <LIGAND>
-    smiles
-    <XYZ>
-    x y z
-    <eos>
-    """
-    lines = data.strip().split("\n")
-    ligands = []
-    ligand = []
-    for line in lines:
-        if line == "<LIGAND>":
-            if ligand:  # Don't forget to add the previous ligand if it exists
-                ligands.append(ligand)
-            ligand = [line]
-        elif line == "<XYZ>":
-            ligand.append(line)
-        elif line == "<eos>":
-            ligand.append(line)
-            ligands.append(ligand)
-            ligand = []
-        else:
-            ligand.append(line)
-
-    # Handle the case where data does not end with <eos>
-    if ligand:
-        ligands.append(ligand)
-    
-    n_train = int(ratio * len(ligands))
-    train_data = "\n".join(["\n".join(ligand) for ligand in ligands[:n_train]])
-    val_data = "\n".join(["\n".join(ligand) for ligand in ligands[n_train:]])
-
-    return train_data, val_data
-
 def train(
         config: dict,
         data: str,
         model_path: str,
-        seed: int = 1234,
+        seed: int = 123,
         device: torch.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         ):
     torch.random.manual_seed(seed=seed)
@@ -164,16 +154,16 @@ def train(
     # data loader
     train_loader = create_data_loader(
         input=train_data, 
-        batch_size=config["batch_size"], 
-        max_tokens=config["max_tokens"], 
-        stride=config["stride"],
+        batch_size=config["training"]["batch_size"], 
+        max_tokens=config["tokenizer"]["max_tokens"], 
+        stride=config["tokenizer"]["stride"],
         tokenizer=tokenizer
     )
     val_loader = create_data_loader(
         input=val_data, 
-        batch_size=config["batch_size"], 
-        max_tokens=config["max_tokens"], 
-        stride=config["stride"],
+        batch_size=config["training"]["batch_size"], 
+        max_tokens=config["tokenizer"]["max_tokens"], 
+        stride=config["tokenizer"]["stride"],
         tokenizer=tokenizer
     )
 
@@ -184,11 +174,11 @@ def train(
     # model
     model = DecoderTransformer(
             vocab_size=vocab_size,                                      # Size of the vocabulary
-            n_layers=config["n_layers"],                                # Number of layers in the transformer
-            embedding_dim=config["embedding_dim"],                      # Dimension of the embeddings
-            num_heads=config["num_heads"],                              # Number of heads in the multihead attention
-            context_size=config["context_size"],                        # Size of the context window
-            dropout=config["dropout"],                                  # Dropout probability
+            n_layers=config["DecoderTransformer"]["n_layers"],                                # Number of layers in the transformer
+            embedding_dim=config["DecoderTransformer"]["embedding_dim"],                      # Dimension of the embeddings
+            num_heads=config["DecoderTransformer"]["num_heads"],                              # Number of heads in the multihead attention
+            context_size=config["DecoderTransformer"]["context_size"],                        # Size of the context window
+            dropout=config["DecoderTransformer"]["dropout"],                                  # Dropout probability
             )
     model.to(device=device)
 
@@ -199,8 +189,8 @@ def train(
     # lr, optimizer, scheduler
     optimizer = torch.optim.AdamW(
         model.parameters(), 
-        lr=float(config["lr"]), 
-        weight_decay=config["weight_decay"]
+        lr=float(config["training"]["lr"]), 
+        weight_decay=config["training"]["weight_decay"]
     )    
 
     # Setup TensorBoard writer
@@ -248,6 +238,13 @@ def train(
                 msg = f"Epoch: {epoch}, Global step: {global_step}, Train loss: {train_loss}, Val loss: {val_loss}"
                 model_logger.info(msg)
 
+        # generate and print sample every epoch
+        generate_and_print_sample(
+            model, 
+            tokenizer, 
+            device, 
+            config["training"]["context_size"]
+        )
     # Close TensorBoard writer
     writer.close()
 
@@ -256,17 +253,41 @@ def train(
     
     return train_losses, val_losses, track_tokens_seen
 
+def generate_and_print_sample(
+        model: nn.Module,
+        tokenizer: LigandTokenizer,
+        device: torch.device,
+        start_context: str
+        ) -> None:
+    model.eval()
+    context_size = model.pos_embedding.weight.shape[0]
+    enconded = tokenizer.encode(tokenizer.tokenize(start_context)).to(device)
+
+    with torch.no_grad():
+        tokens_ids = generate(
+            model, 
+            enconded, 
+            context_size, 
+            max_len=100, 
+            temperature=1.0)
+        decoded_tokens = tokenizer.decode_tkn(tokens_ids)
+        print("".join(decoded_tokens))
+    model.train()
+
+
+
 def main():
+
     args = parse_args()
     config = load_config(args.config)
-    decoder_cfg = config["DecoderTransformer"]
+    decoder_cfg = config
 
     if args.train_data is not None:
         data = load_data(args.train_data)
     else:
         raise ValueError("The training data is not provided.")
 
-    train(
+    train_losses, val_losses, track_tokens_seen = train(
         decoder_cfg, 
         data,
         args.output

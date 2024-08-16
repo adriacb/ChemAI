@@ -1,10 +1,10 @@
 import sys
 sys.path.append('..')
 import torch
-from typing import List
-from tokenizer import LigandTokenizer
+from typing import List, Tuple
+from llm.tokenizer import LigandTokenizer
 from torch.utils.data import DataLoader
-from logger import model_logger
+from llm.logger import model_logger
 
 class MoleculeDatasetLoader:
     def __init__(self, text: str, 
@@ -94,3 +94,41 @@ def create_data_loader(input: str,
     )
 
     return data_loader
+
+def split_data(data: str, ratio: float = 0.8) -> Tuple[str, str]:
+    """
+    Split the data into training and validation sets.
+    The format should be:
+    
+    <LIGAND>
+    smiles
+    <XYZ>
+    x y z
+    <eos>
+    """
+    lines = data.strip().split("\n")
+    ligands = []
+    ligand = []
+    for line in lines:
+        if line == "<LIGAND>":
+            if ligand:  # Don't forget to add the previous ligand if it exists
+                ligands.append(ligand)
+            ligand = [line]
+        elif line == "<XYZ>":
+            ligand.append(line)
+        elif line == "<eos>":
+            ligand.append(line)
+            ligands.append(ligand)
+            ligand = []
+        else:
+            ligand.append(line)
+
+    # Handle the case where data does not end with <eos>
+    if ligand:
+        ligands.append(ligand)
+    
+    n_train = int(ratio * len(ligands))
+    train_data = "\n".join(["\n".join(ligand) for ligand in ligands[:n_train]])
+    val_data = "\n".join(["\n".join(ligand) for ligand in ligands[n_train:]])
+
+    return train_data, val_data
