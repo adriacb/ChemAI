@@ -1,88 +1,316 @@
 import os
-import re
 import torch
 import json
+import regex as re
+import unicodedata
 from transformers import AutoTokenizer
 from pydantic import BaseModel, Field
-from typing import List, Dict
-
+from typing import List, Dict, Tuple, Union
+from .regex import *
 # https://github.com/MTxSouza/MediumArticleGenerator/blob/main/model/tokenizer.py
 
+def get_stats(ids: List[int], counts: Dict[int, int] = None) -> Dict[Tuple[int, int], int]:
+    """Given a list of integers, return a dictionary of counts for each pair of integers.
+    E.g [1, 2, 3, 1, 2, 1] -> {(1, 2): 2, (2, 3): 1, (3, 1): 1}
+    
+    Args:
+        ids (List[int]): List of integers.
+        counts (Dict[int, int], optional): Dictionary of counts for each pair of integers. Defaults to None.
+    
+    Returns:
+        Dict[Tuple[int, int], int]: Dictionary of counts for each pair of integers.
+    """
+    counts = counts or {}
+    for pair in zip(ids, ids[1:]):
+        counts[pair] = counts.get(pair, 0) + 1
+    return counts
+
+def merge(ids: List[int], pair: Tuple[int, int], idx: int) -> List[int]:
+    """Merge a pair of integers in a list of integers.
+    ```
+    E.g [1, 2, 3, 1, 2, 1], (1, 2), 0 -> [0, 0, 3, 0, 0, 0]
+    ```
+    Args:
+        ids (List[int]): List of integers.
+        pair (Tuple[int, int]): Pair of integers to merge.
+        idx (int): Index of the new integer.
+    
+    Returns:
+        List[int]: List of integers with the merged pair.
+    """
+    new_ids = []
+    i = 0
+    while i < len(ids):
+        if ids[i] == pair[0] and i < len(ids) - 1 and ids[i + 1] == pair[1]:
+            new_ids.append(idx)
+            i += 2
+        else:
+            new_ids.append(ids[i])
+            i += 1
+    return new_ids
+
+def render_token(token: bytes) -> str:
+    """Render a token as a string.
+    Args:
+        token (bytes): Token as bytes.
+    Returns:
+        str: Token as a string.
+    """
+    s = token.decode('utf-8', errors='replace')
+    chars = []
+    for ch in s:
+        if unicodedata.category(ch).startswith('C'):
+            chars.append(ch)
+        else:
+            chars.append(f"\\u{ord(ch):04x}")
+    return "".join(chars)
+
+ 
+    
 class Tokenizer:
-    SOS = "<s>"
-    EOS = "<eos>"
-    UNK = "<unk>"
-    SOA = "<soa>"
+    """Base class for Tokenizers"""
 
-    special_tokens_ = [SOS, EOS, UNK, SOA]
+    def __init__(self):
+        # default: vocab size of 256 (all bytes), no merges, no patterns
+        self.merges = {} # (int, int) -> int
+        self.pattern = "" # str
+        self.special_tokens = {} # str -> int, e.g. {'<|endoftext|>': 100257}
+        self.vocab = self._build_vocab() # int -> bytes
 
+    def train(self, text: str, vocab_size: int = 256, verbose: bool = False):
+        # Tokenizer can train a vocabulary of size vocab_size from text
+        raise NotImplementedError
 
-    def __init__(self, vocab: Dict[str, int]):
-        self.vocab = vocab
-        self.vocab_encode = {str(k): int(v) for k, v in vocab.items()}
-        self.vocab_decode = {int(v): str(k) for k, v in vocab.items()}
+    def encode(self, text: str):
+        # Tokenizer can encode a string into a list of integers
+        raise NotImplementedError
 
-    @staticmethod
-    def create_vocab(corpus: str) -> Dict[str, int]:
-        """
-        Create a vocabulary from the given corpus.
+    def decode(self, ids: List[int]):
+        # Tokenizer can decode a list of integers into a string
+        raise NotImplementedError
 
-        Args:
-        - corpus: str
-
-        Returns:
-        - vocab: Dict[str, int]
-        """
-        vocab = {
-            token: index
-            for index, token in enumerate(sorted(set(corpus.split())))
-        }
-
-        # Special tokens for the transformer model
-        vocab["<unk>"] = len(vocab)
-        #vocab["<s>"] = len(vocab)
-        #vocab["<eos>"] = len(vocab)
-        
+    def _build_vocab(self):
+        # vocab is simply and deterministically derived from merges
+        vocab = {idx: bytes([idx]) for idx in range(256)}
+        for (p0, p1), idx in self.merges.items():
+            vocab[idx] = vocab[p0] + vocab[p1]
+        for special, idx in self.special_tokens.items():
+            vocab[idx] = special.encode("utf-8")
         return vocab
+
+    def get_tokens(self, text: str) -> List[str]:
+        """
+        Given a text, return the list of tokens in their textual representation.
+        
+        Args:
+            text (str): The input text to tokenize.
+
+        Returns:
+            List[str]: List of tokens as text.
+        """
+        # Encode the text into token IDs
+        token_ids = self.encode(text)
+        print(set(token_ids))
+        # Convert each token ID back into its string representation
+        tokens = [self.vocab[token_id].decode('utf-8', errors='replace') for token_id in token_ids]
+        
+        return tokens        
+
+    def save(self, file_prefix: str):
+        """
+        Saves two files: file_prefix.vocab and file_prefix.model
+        This is inspired (but not equivalent to!) sentencepiece's model saving:
+        - model file is the critical one, intended for load()
+        - vocab file is just a pretty printed version for human inspection only
+        """
+        # write the model: to be used in load() later
+        model_file = file_prefix + ".model"
+        with open(model_file, 'w') as f:
+            # write the version, pattern and merges, that's all that's needed
+            f.write("minbpe v1\n")
+            f.write(f"{self.pattern}\n")
+            # write the special tokens, first the number of them, then each one
+            f.write(f"{len(self.special_tokens)}\n")
+            for special, idx in self.special_tokens.items():
+                f.write(f"{special} {idx}\n")
+            # the merges dict
+            for idx1, idx2 in self.merges:
+                f.write(f"{idx1} {idx2}\n")
+        # write the vocab: for the human to look at
+        vocab_file = file_prefix + ".vocab"
+        inverted_merges = {idx: pair for pair, idx in self.merges.items()}
+        with open(vocab_file, "w", encoding="utf-8") as f:
+            for idx, token in self.vocab.items():
+                # note: many tokens may be partial utf-8 sequences
+                # and cannot be decoded into valid strings. Here we're using
+                # errors='replace' to replace them with the replacement char �.
+                # this also means that we couldn't possibly use .vocab in load()
+                # because decoding in this way is a lossy operation!
+                s = render_token(token)
+                # find the children of this token, if any
+                if idx in inverted_merges:
+                    # if this token has children, render it nicely as a merge
+                    idx0, idx1 = inverted_merges[idx]
+                    s0 = render_token(self.vocab[idx0])
+                    s1 = render_token(self.vocab[idx1])
+                    f.write(f"[{s0}][{s1}] -> [{s}] {idx}\n")
+                else:
+                    # otherwise this is leaf token, just print it
+                    # (this should just be the first 256 tokens, the bytes)
+                    f.write(f"[{s}] {idx}\n")
+
+    def load(self, model_file: str):
+        """Inverse of save() but only for the model file"""
+        assert model_file.endswith(".model")
+        # read the model file
+        merges = {}
+        special_tokens = {}
+        idx = 256
+        with open(model_file, 'r', encoding="utf-8") as f:
+            # read the version
+            version = f.readline().strip()
+            assert version == "minbpe v1"
+            # read the pattern
+            self.pattern = f.readline().strip()
+            # read the special tokens
+            num_special = int(f.readline().strip())
+            for _ in range(num_special):
+                special, special_idx = f.readline().strip().split()
+                special_tokens[special] = int(special_idx)
+            # read the merges
+            for line in f:
+                idx1, idx2 = map(int, line.split())
+                merges[(idx1, idx2)] = idx
+                idx += 1
+        self.merges = merges
+        self.special_tokens = special_tokens
+        self.vocab = self._build_vocab()
+
+
+class LBPETokenizer(Tokenizer):
+    def __init__(self, pattern: Union[str, None] = None):
+        super().__init__()
+        self.pattern: str = LIGAND_PAT if pattern is None else pattern
+        self.compiled_pattern: re.Pattern = re.compile(self.pattern)
+        self.special_tokens: Dict[str, int] = dict()
+        self.inverse_special_tokens: Dict[int, str] = dict()
     
-    def encode(self, text: str) -> List[int]:
-        """
-        Encode the given indices.
+    def train(self, text: str, vocab_size: int = 256, verbose: bool = False):
+        if vocab_size < 256:
+            raise ValueError("Vocab size must be at least 256.")
+        num_merges = vocab_size - 256
+        text_chunks = re.findall(self.compiled_pattern, text)
+        ids = [list(ch.encode('utf-8')) for ch in text_chunks]
+        merges = {}
+        vocab = {idx: bytes([idx]) for idx in range(256)}
+        for i in range(num_merges):
+            stats = {}
+            for chunk_ids in ids:
+                # passing in stats will update it in place
+                get_stats(chunk_ids, stats)
+            pair = max(stats, key=stats.get)
+            idx = 256 + i
+            ids = [merge(chunk_ids, pair, idx) for chunk_ids in ids]
+            merges[pair] = idx
+            vocab[idx] = vocab[pair[0]] + vocab[pair[1]]
+            if verbose:
+                print(f"merge {i+1}/{num_merges}: {pair} -> {idx} ({vocab[idx]}) had {stats[pair]} occurrences")
 
-        Args:
-        - indices: List[int]
-
-        Returns:
-        - tokens: List[str]
-        """
-        return [self.vocab_decode.get(char, "<unk>") for char in text]
+        self.merges = merges
+        self.vocab = vocab
     
-    def decode(self, indices: List[int]) -> str:
+    def register_special_tokens(self, special_tokens: Dict[str, int]):
+        self.special_tokens = special_tokens
+        self.inverse_special_tokens = {idx: token for token, idx in special_tokens.items()}
+
+        # Add special tokens to the vocab
+        for token, idx in special_tokens.items():
+            self.vocab[idx] = token.encode("utf-8")
+
+    def decode(self, ids: List[int]) -> str:
+        part_bytes = []
+        for idx in ids:
+            if idx in self.vocab:
+                part_bytes.append(self.vocab[idx])
+            elif idx in self.inverse_special_tokens:
+                part_bytes.append(self.inverse_special_tokens[idx].encode("utf-8"))
+            else:
+                raise ValueError(f"invalid token id: {idx}")
+        text_bytes = b"".join(part_bytes)
+        text = text_bytes.decode("utf-8", errors="replace")
+        return text
+
+    def _encode_chunk(self, text_bytes: bytes) -> List[int]:
+        ids = list(text_bytes)
+        while len(ids) >= 2:
+            # find the pair with the lowest merge index
+            stats = get_stats(ids)
+            pair = min(stats, key=lambda p: self.merges.get(p, float("inf")))
+            # subtle: if there are no more merges available, the key will
+            # result in an inf for every single pair, and the min will be
+            # just the first pair in the list, arbitrarily
+            # we can detect this terminating case by a membership check
+            if pair not in self.merges:
+                break # nothing else can be merged anymore
+            # otherwise let's merge the best pair (lowest merge index)
+            idx = self.merges[pair]
+            ids = merge(ids, pair, idx)
+        return ids
+    
+    def encode_ordinary(self, text: str) -> List[int]:
+        """Encoding that ignores any special tokens."""
+        # split text into chunks of text by categories defined in regex pattern
+        text_chunks = re.findall(self.compiled_pattern, text)
+        # all chunks of text are encoded separately, then results are joined
+        ids = []
+        for chunk in text_chunks:
+            chunk_bytes = chunk.encode("utf-8") # raw bytes
+            chunk_ids = self._encode_chunk(chunk_bytes)
+            ids.extend(chunk_ids)
+        return ids
+    
+    def encode(self, text: str, allowed_special: str = "all") -> List[int]:
         """
-        Decode the given tokens.
-
-        Args:
-        - tokens: List[str]
-
-        Returns:
-        - text: str
+        Unlike encode_ordinary, this function handles special tokens.
+        allowed_special: can be "all"|"none"|"none_raise" or a custom set of special tokens
+        if none_raise, then an error is raised if any special token is encountered in text
+        this is the default tiktoken behavior right now as well
+        any other behavior is either annoying, or a major footgun
         """
-        return "".join([self.vocab_encode.get(char, "<unk>") for char in indices])
-
-    def __len__(self) -> int:
-        return len(self.vocab)
-
-    def tokenize(self, text: str) -> List[str]:
-        """
-        Tokenize the given text.
-
-        Args:
-        - text: str
-
-        Returns:
-        - tokens: List[str]
-        """
-        taged_text = self.SOS + text + self.EOS + self.SOA
+        # decode the user desire w.r.t. handling of special tokens
+        special = None
+        if allowed_special == "all":
+            special = self.special_tokens
+        elif allowed_special == "none":
+            special = {}
+        elif allowed_special == "none_raise":
+            special = {}
+            assert all(token not in text for token in self.special_tokens)
+        elif isinstance(allowed_special, set):
+            special = {k: v for k, v in self.special_tokens.items() if k in allowed_special}
+        else:
+            raise ValueError(f"allowed_special={allowed_special} not understood")
+        if not special:
+            # shortcut: if no special tokens, just use the ordinary encoding
+            return self.encode_ordinary(text)
+        # otherwise, we have to be careful with potential special tokens in text
+        # we handle special tokens by splitting the text
+        # based on the occurrence of any exact match with any of the special tokens
+        # we can use re.split for this. note that surrounding the pattern with ()
+        # makes it into a capturing group, so the special tokens will be included
+        special_pattern = "(" + "|".join(re.escape(k) for k in special) + ")"
+        special_chunks = re.split(special_pattern, text)
+        # now all the special characters are separated from the rest of the text
+        # all chunks of text are encoded separately, then results are joined
+        ids = []
+        for part in special_chunks:
+            if part in special:
+                # this is a special token, encode it separately as a special case
+                ids.append(special[part])
+            else:
+                # this is an ordinary sequence, encode it normally
+                ids.extend(self.encode_ordinary(part))
+        return ids  
 
 class LigandTokenizer(BaseModel):
     """

@@ -1,0 +1,9 @@
+minbpe v1
+'?<LIGAND>|<XYZ>|<eos>| ?\p{L}| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+
+6
+<LIGAND> 257
+<PAD> 258
+<MASK> 259
+<UNK> 260
+<XYZ> 261
+<eos> 262

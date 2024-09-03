@@ -26,8 +26,8 @@ class MoleculeDatasetLoader:
         self.input_ids = []
         self.target_ids = []
 
-        tokens = self.tokenizer.tokenize(text)
-        token_ids = self.tokenizer.encode(tokens)
+        #tokens = self.tokenizer.tokenize(text)
+        token_ids = self.tokenizer.encode(text)
         
         if None in token_ids:
             raise ValueError(
