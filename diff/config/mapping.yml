@@ -11,6 +11,7 @@ MAP_ATOM_SYMBOLS:
   I: 9
 
 MAP_HYBRIDIZATION:
+  S: 7
   SP: 0
   SP2: 1
   SP3: 2

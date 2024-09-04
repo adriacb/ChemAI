@@ -12,8 +12,7 @@ MODEL_PATH = "model.pth"
 
 TEST_INPUT = """<LIGAND>
 Cn1c(=O)c2c(ncn2C)n(C)c1=O
-<XYZ>
-"""
+<XYZ>"""
 
 def format_output(output: List[str]) -> str:
     """Format the output list of tokens into a string."""

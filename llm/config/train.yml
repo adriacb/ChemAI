@@ -2,26 +2,43 @@
 DecoderTransformer:
   # model parameters 
   embedding_dim: 768   # embedding_dim // num_heads, Embedding dimension must be divisible by number of heads
-  n_layers: 12         # number of layers in the transformer
+  n_layers: 12         # number of layers in the transformer (hidden layers)
   num_heads: 12        # number of heads in multi-head attention
   context_size: 256    # context size for the transformer
-  dropout: 0.2
+  dropout: 0.2         # dropout rate
+  # review the following parameters
+  dtype: float32       # data type {float32, float16, bfloat16}
+  activation: gelu     # activation function {gelu, relu}
   qkv_bias: True       # whether to include bias in qkv projection (TODO)
+  use_cache: True      # whether to use cache in transformer (TODO)
+  bos_token_id: 1      # beginning of sentence token id
+  eos_token_id: 2      # end of sentence token id
+  intermediate_size: 3072  # intermediate size in the transformer
+  start_context: "<LIGAND>\nCn1c(=O)c2c(ncn2C)n(C)c1=O\n<XYZ>\n"
+
 training:
   # training parameters
-  batch_size: 8
-  epochs: 1
-  lr: 5e-4
-  weight_decay: 0.01
-  eval_steps: 200
-  eval_iter: 2000
-  train_ratio: 0.8
+  batch_size: 32        # batch size
+  epochs: 1             # number of epochs
+  lr: 5e-4              # learning rate (custom or float)
+  weight_decay: 0.01    # weight decay
+  eval_steps: 200       # evaluation steps
+  eval_iter: 2000       # evaluation iterations
+  train_ratio: 0.8      # training ratio
+  print_samples: False  # whether to print sample
+  print_freq: 1000      # sample print frequency
+  seed: 123             # random seed
+
 tokenizer:
   # tokenizer parameters
-  max_tokens: 512
-  stride: 32
+  vocab_size: 30000     # vocabulary size
+  max_tokens: 256       # maximum number of tokens
+  stride: 16            # stride for tokenization
+  # review the following parameters
+  use_fast: True        # whether to use fast tokenizer (TODO)
+
 data_loader:
-  num_workers: 12
+  num_workers: 1
 
 # Flash-attention (Dao, 2023) or DeepSpeed (Rasley et al., 2020), nor the algorithimic ones, such as learning rate
 # scaling. Our work aims to fill this gap by demonstrating the effectiveness of the pretraining for 3D drug discovery.

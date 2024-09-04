@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import Tuple, Optional
-
+from pydantic import BaseModel
 from .block import Decoder
 
 class DecoderTransformer(nn.Module):
@@ -97,3 +97,11 @@ class DecoderTransformer(nn.Module):
             # concatenate the new token
             idx = torch.cat([idx, next_token], dim=-1)
         return idx
+    
+class DecoderTransformerConfig(BaseModel):
+    vocab_size: int = 50257
+    n_layers: int = 6
+    embedding_dim: int = 768
+    num_heads: int = 12
+    context_size: int = 1024
+    dropout: float = 0.1
