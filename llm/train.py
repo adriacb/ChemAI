@@ -11,7 +11,7 @@ from torch.utils.data import DataLoader
 from torch.utils.tensorboard import SummaryWriter  # For TensorBoard
 # https://www.tensorflow.org/install/pip?hl=es-419#linux
 from logger import model_logger
-from tokenizer import LigandTokenizer
+from tokenizer import LBPETokenizer#LigandTokenizer
 from preprocessing.loader import create_data_loader, split_data
 PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 sys.path.append(PATH)
@@ -145,10 +145,26 @@ def train(
     model_logger.info(msg)
 
     # tokenizer
-    tokenizer = LigandTokenizer()
-    tokenizer.build_vocab([data])
-    # save tokenizer
-    tokenizer.save("tokenizer.json")
+    # tokenizer = LBPETokenizer()#LigandTokenizer()
+    # tokenizer.build_vocab([data])
+    # # save tokenizer
+    # tokenizer.save("tokenizer.json")
+    tokenizer = LBPETokenizer()
+    tokenizer.train(data)
+    tokenizer.register_special_tokens(
+        {
+            "<LIG>": 257,
+            "<XYZ>": 258,
+            "<MOL>": 259,
+            "<FRAG>": 260,
+            "<PROT>": 261,
+            "<POCKET>": 262,
+            "<mask>": 263,
+            "<bos>": 264,
+            "<eos>": 265,
+            "<pad>": 266,
+        }
+    )
 
     #sys.exit("Exiting...")
 
@@ -260,7 +276,7 @@ def train(
 
 def generate_and_print_sample(
         model: nn.Module,
-        tokenizer: LigandTokenizer,
+        tokenizer: LBPETokenizer,
         device: torch.device,
         start_context: str
         ) -> None:

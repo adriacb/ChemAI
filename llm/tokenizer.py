@@ -6,7 +6,7 @@ import unicodedata
 from transformers import AutoTokenizer
 from pydantic import BaseModel, Field
 from typing import List, Dict, Tuple, Union
-from .regex import *
+from reg import *
 # https://github.com/MTxSouza/MediumArticleGenerator/blob/main/model/tokenizer.py
 
 def get_stats(ids: List[int], counts: Dict[int, int] = None) -> Dict[Tuple[int, int], int]:
