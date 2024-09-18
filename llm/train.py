@@ -201,9 +201,13 @@ def train(
             embedding_dim=config["DecoderTransformer"]["embedding_dim"],                      # Dimension of the embeddings
             num_heads=config["DecoderTransformer"]["num_heads"],                              # Number of heads in the multihead attention
             context_size=config["DecoderTransformer"]["context_size"],                        # Size of the context window
-            dropout=config["DecoderTransformer"]["dropout"],                                  # Dropout probability
+            dropout=config["DecoderTransformer"]["dropout"],
+            activation=config["DecoderTransformer"]["activation"]
             )
     model.to(device=device)
+
+    # store image summary of the model
+    
 
     # log number of parameters
     num_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
@@ -230,7 +234,7 @@ def train(
         model.train()
 
         # Wrap train_loader with tqdm for progress display
-        for input_batch, target_batch in tqdm(train_loader, desc=f"Epoch {epoch+1}/{config["training"]['epochs']}", leave=True):
+        for input_batch, target_batch in tqdm(train_loader, desc=f"Epoch {epoch+1}/{config['training']['epochs']}", leave=True):
             optimizer.zero_grad()
             loss = calc_loss_batch(input_batch, target_batch, model, device)
             loss.backward()

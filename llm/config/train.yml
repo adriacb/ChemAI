@@ -6,13 +6,11 @@ DecoderTransformer:
   num_heads: 12        # number of heads in multi-head attention
   context_size: 256    # context size for the transformer
   dropout: 0.2         # dropout rate
+  activation: gelu     # activation function {gelu, relu, silu}
   # review the following parameters
   dtype: float32       # data type {float32, float16, bfloat16}
-  activation: gelu     # activation function {gelu, relu, silu}
   qkv_bias: True       # whether to include bias in qkv projection (TODO)
   use_cache: True      # whether to use cache in transformer (TODO)
-  bos_token_id: 1      # beginning of sentence token id
-  eos_token_id: 2      # end of sentence token id
   intermediate_size: 3072  # intermediate size in the transformer
   start_context: "<LIGAND>\nCn1c(=O)c2c(ncn2C)n(C)c1=O\n<XYZ>\n"
 
@@ -31,7 +29,6 @@ training:
 
 tokenizer:
   # tokenizer parameters
-  vocab_size: 30000     # vocabulary size
   max_tokens: 256       # maximum number of tokens
   stride: 16            # stride for tokenization
   # review the following parameters
