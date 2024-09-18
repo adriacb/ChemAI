@@ -5,13 +5,26 @@ from llm.models.mha import MultiHeadAttentionBlock
 from llm.tools import PositionalEncoding
 
 class FeedForward(nn.Module):
+    act_functions = {
+        'relu': nn.ReLU(),
+        'gelu': nn.GELU(),
+        'silu': nn.SiLU()
+    }
+    
     def __init__(self, 
                  embedding_dim: int, 
-                 dropout: float):
+                 dropout: float,
+                 activation: str = 'relu'):
+        
+        if activation not in self.act_functions:
+            raise ValueError(f'Activation function {activation} not supported.')
+        
+        act_fn = self.act_functions[activation]
+
         super(FeedForward, self).__init__()
         self.ff = nn.Sequential(
             nn.Linear(embedding_dim, embedding_dim * 4),
-            nn.ReLU(),
+            act_fn,
             nn.Linear(embedding_dim * 4, embedding_dim),
             nn.Dropout(dropout)
         )
@@ -107,7 +120,8 @@ class DecoderBlock(nn.Module):
                 embedding_dim: int,
                 num_heads: int,
                 context_size: int,
-                dropout: float):
+                dropout: float,
+                activation: str):
         super(DecoderBlock, self).__init__()
 
         self.mha = MultiHeadAttentionBlock(
@@ -115,7 +129,7 @@ class DecoderBlock(nn.Module):
             num_heads=num_heads,
             context_size=context_size
         )
-        self.ff = FeedForward(embedding_dim, dropout)
+        self.ff = FeedForward(embedding_dim, dropout, activation)
         self.norm1 = nn.LayerNorm(embedding_dim)
         self.norm2 = nn.LayerNorm(embedding_dim)
     
@@ -137,10 +151,11 @@ class Decoder(nn.Module):
                 embedding_dim: int,
                 context_size: int,
                 num_heads: int,
-                dropout: float):
+                dropout: float,
+                activation: str):
         super(Decoder, self).__init__()
         self.blocks = nn.Sequential(*[
-            DecoderBlock(embedding_dim, num_heads, context_size, dropout)
+            DecoderBlock(embedding_dim, num_heads, context_size, dropout, activation)
             for _ in range(n_layers)
         ])
 

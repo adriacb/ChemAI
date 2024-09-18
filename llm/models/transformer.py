@@ -13,7 +13,8 @@ class DecoderTransformer(nn.Module):
                  embedding_dim: int,       # size of the embeddings
                  num_heads: int,           # number of heads
                  context_size: int,        # size of the context
-                 dropout: float):          # dropout rate
+                 dropout: float,           # dropout rate
+                 activation: str):         # activation function
         super(DecoderTransformer, self).__init__()
         self.context_size = context_size
         # embedding layer
@@ -26,7 +27,8 @@ class DecoderTransformer(nn.Module):
             embedding_dim=embedding_dim,
             num_heads=num_heads,
             context_size=context_size,
-            dropout=dropout
+            dropout=dropout,
+            activation=activation
         )
         self.norm = nn.LayerNorm(embedding_dim)
         # output layer
