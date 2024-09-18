@@ -1,1 +1,8 @@
-(llm_logger)[INFO    ]: 2024-09-03 15:52:03,550 - Number of tokens: 11701856 ; module `loader` in line 39
+(llm_logger)[INFO    ]: 2024-09-04 09:42:59,609 - Number of tokens: 11701856 ; module `loader` in line 3(llm_logger)[INFO    ]: 2024-09-04 09:43:56,644 - Number of training batches: 22854 ; module `train` in line 186
+(llm_logger)[INFO    ]: 2024-09-04 09:43:56,644 - Number of validation batches: 5830 ; module `train` in line 187
+(llm_logger)[INFO    ]: 2024-09-04 09:44:00,489 - Number of parameters: 298717316 ; module `train` in line 202
+(llm_logger)[INFO    ]: 2024-09-04 09:52:51,118 - Epoch: 0, Global step: 0, Train loss: 8.837870083332062, Val loss: 8.802270823955537 ; module `train` in line 254
+(llm_logger)[INFO    ]: 2024-09-04 10:09:41,365 - Epoch: 0, Global step: 200, Train loss: 1.468494289278984, Val loss: 1.471344297170639 ; module `train` in line 254
+(llm_logger)[INFO    ]: 2024-09-04 10:26:31,622 - Epoch: 0, Global step: 400, Train loss: 1.3530338096618653, Val loss: 1.357788694858551 ; module `train` in line 254
+(llm_logger)[INFO    ]: 2024-09-04 10:43:16,073 - Epoch: 0, Global step: 600, Train loss: 1.3335752306580544, Val loss: 1.3378769563436508 ; module `train` in line 254
+(llm_logger)[INFO    ]: 2024-09-04 11:00:03,188 - Epoch: 0, Global step: 800, Train loss: 1.3262744060158729, Val loss: 1.3319236741662026 ; module `train` in line 254

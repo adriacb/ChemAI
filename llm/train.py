@@ -140,8 +140,7 @@ def train(
     if data is None or len(data) == 0:
         raise ValueError("The training data is empty.")
     
-    vocab_size = len(set(data.split()))
-    msg = f"Vocabulary size: {vocab_size}"
+
     model_logger.info(msg)
 
     # tokenizer
@@ -165,6 +164,10 @@ def train(
             "<pad>": 266,
         }
     )
+
+    # vocab size corresponds to the number of unique tokens in the training data
+    vocab_size = tokenizer.get_vocab_size()             # len(set(data.split()))
+    msg = f"Vocabulary size: {vocab_size}"
 
     #sys.exit("Exiting...")
 

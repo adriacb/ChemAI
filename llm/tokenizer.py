@@ -185,6 +185,9 @@ class Tokenizer:
         self.merges = merges
         self.special_tokens = special_tokens
         self.vocab = self._build_vocab()
+    
+    def get_vocab_size(self) -> int:
+        return len(self.vocab)
 
 
 class LBPETokenizer(Tokenizer):
