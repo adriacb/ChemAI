@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter  # For TensorBoard
 # https://www.tensorflow.org/install/pip?hl=es-419#linux
 from logger import model_logger
 from tokenizer import LBPETokenizer#LigandTokenizer
-from preprocessing.loader import create_data_loader, split_data
+from preprocessing.loader import create_data_loader, split_data2
 PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), os.pardir))
 sys.path.append(PATH)
 from llm.models.transformer import DecoderTransformer
@@ -140,14 +140,14 @@ def train(
     if data is None or len(data) == 0:
         raise ValueError("The training data is empty.")
     
-
-    model_logger.info(msg)
+    model_logger.info(f"Using device {device}")
 
     # tokenizer
     # tokenizer = LBPETokenizer()#LigandTokenizer()
     # tokenizer.build_vocab([data])
     # # save tokenizer
     # tokenizer.save("tokenizer.json")
+    model_logger.info("Tokenizer initialization and training.")
     tokenizer = LBPETokenizer()
     tokenizer.train(data)
     tokenizer.register_special_tokens(
@@ -158,6 +158,7 @@ def train(
             "<FRAG>": 260,
             "<PROT>": 261,
             "<POCKET>": 262,
+            "<SURF>": 267,
             "<mask>": 263,
             "<bos>": 264,
             "<eos>": 265,
@@ -168,11 +169,11 @@ def train(
     # vocab size corresponds to the number of unique tokens in the training data
     vocab_size = tokenizer.get_vocab_size()             # len(set(data.split()))
     msg = f"Vocabulary size: {vocab_size}"
-
+    model_logger.info(msg)
     #sys.exit("Exiting...")
 
     # split data
-    train_data, val_data = split_data(data)
+    train_data, val_data = split_data2(data)
 
     # data loader
     train_loader = create_data_loader(

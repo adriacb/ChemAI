@@ -110,7 +110,7 @@ def split_data(data: str, ratio: float = 0.8) -> Tuple[str, str]:
     ligands = []
     ligand = []
     for line in lines:
-        if line == "<LIGAND>":
+        if line == "<MOL>":
             if ligand:  # Don't forget to add the previous ligand if it exists
                 ligands.append(ligand)
             ligand = [line]
@@ -127,6 +127,39 @@ def split_data(data: str, ratio: float = 0.8) -> Tuple[str, str]:
     if ligand:
         ligands.append(ligand)
     
+    n_train = int(ratio * len(ligands))
+    train_data = "\n".join(["\n".join(ligand) for ligand in ligands[:n_train]])
+    val_data = "\n".join(["\n".join(ligand) for ligand in ligands[n_train:]])
+
+    return train_data, val_data
+
+def split_data2(data: str, ratio: float = 0.8) -> Tuple[str, str]:
+    """
+    Split the data into training and validation sets based on samples starting with <MOL>.
+    Each sample starts with <MOL> and contains:
+    
+    <MOL>
+    smiles
+    <XYZ>
+    x y z
+    """
+    lines = data.strip().split("\n")
+    ligands = []
+    ligand = []
+    
+    for line in lines:
+        if line == "<MOL>":
+            if ligand:  # If we encounter a new <MOL>, store the previous ligand
+                ligands.append(ligand)
+            ligand = [line]  # Start a new ligand entry
+        else:
+            ligand.append(line)
+    
+    # Add the last ligand (in case the data doesn't end with a <MOL>)
+    if ligand:
+        ligands.append(ligand)
+    
+    # Split into training and validation sets
     n_train = int(ratio * len(ligands))
     train_data = "\n".join(["\n".join(ligand) for ligand in ligands[:n_train]])
     val_data = "\n".join(["\n".join(ligand) for ligand in ligands[n_train:]])

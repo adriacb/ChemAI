@@ -9,6 +9,9 @@ from typing import List, Dict, Tuple, Union
 from reg import *
 # https://github.com/MTxSouza/MediumArticleGenerator/blob/main/model/tokenizer.py
 
+# https://medium.com/@govindarajpriyanthan/build-and-train-gpt-4-tokenizer-from-scratch-ad90d3af0f11
+
+
 def get_stats(ids: List[int], counts: Dict[int, int] = None) -> Dict[Tuple[int, int], int]:
     """Given a list of integers, return a dictionary of counts for each pair of integers.
     E.g [1, 2, 3, 1, 2, 1] -> {(1, 2): 2, (2, 3): 1, (3, 1): 1}
@@ -70,12 +73,13 @@ def render_token(token: bytes) -> str:
 class Tokenizer:
     """Base class for Tokenizers"""
 
-    def __init__(self):
+    def __init__(self, vocab_size:int=1024):
         # default: vocab size of 256 (all bytes), no merges, no patterns
         self.merges = {} # (int, int) -> int
         self.pattern = "" # str
         self.special_tokens = {} # str -> int, e.g. {'<|endoftext|>': 100257}
         self.vocab = self._build_vocab() # int -> bytes
+        self.vocab_size = vocab_size
 
     def train(self, text: str, vocab_size: int = 256, verbose: bool = False):
         # Tokenizer can train a vocabulary of size vocab_size from text
@@ -189,7 +193,6 @@ class Tokenizer:
     def get_vocab_size(self) -> int:
         return len(self.vocab)
 
-
 class LBPETokenizer(Tokenizer):
     def __init__(self, pattern: Union[str, None] = None):
         super().__init__()
@@ -198,30 +201,6 @@ class LBPETokenizer(Tokenizer):
         self.special_tokens: Dict[str, int] = dict()
         self.inverse_special_tokens: Dict[int, str] = dict()
     
-    def train(self, text: str, vocab_size: int = 256, verbose: bool = False):
-        if vocab_size < 256:
-            raise ValueError("Vocab size must be at least 256.")
-        num_merges = vocab_size - 256
-        text_chunks = re.findall(self.compiled_pattern, text)
-        ids = [list(ch.encode('utf-8')) for ch in text_chunks]
-        merges = {}
-        vocab = {idx: bytes([idx]) for idx in range(256)}
-        for i in range(num_merges):
-            stats = {}
-            for chunk_ids in ids:
-                # passing in stats will update it in place
-                get_stats(chunk_ids, stats)
-            pair = max(stats, key=stats.get)
-            idx = 256 + i
-            ids = [merge(chunk_ids, pair, idx) for chunk_ids in ids]
-            merges[pair] = idx
-            vocab[idx] = vocab[pair[0]] + vocab[pair[1]]
-            if verbose:
-                print(f"merge {i+1}/{num_merges}: {pair} -> {idx} ({vocab[idx]}) had {stats[pair]} occurrences")
-
-        self.merges = merges
-        self.vocab = vocab
-    
     def register_special_tokens(self, special_tokens: Dict[str, int]):
         self.special_tokens = special_tokens
         self.inverse_special_tokens = {idx: token for token, idx in special_tokens.items()}
@@ -229,36 +208,88 @@ class LBPETokenizer(Tokenizer):
         # Add special tokens to the vocab
         for token, idx in special_tokens.items():
             self.vocab[idx] = token.encode("utf-8")
+        
+        self.vocab_size += len(special_tokens)
+        
+    def get_stats(self, token_ids, stats):
+        # Find consecutive pairs for merging
+        for pair in zip(token_ids, token_ids[1:]):
+            stats[pair] = stats.get(pair, 0) + 1
+        return stats
 
-    def decode(self, ids: List[int]) -> str:
-        part_bytes = []
-        for idx in ids:
-            if idx in self.vocab:
-                part_bytes.append(self.vocab[idx])
-            elif idx in self.inverse_special_tokens:
-                part_bytes.append(self.inverse_special_tokens[idx].encode("utf-8"))
+    def merge(self, token_ids, pair, new_index):
+        # Merge the most frequent token pairs
+        _token_ids = []
+        i = 0
+        while i < len(token_ids):
+            if (i < len(token_ids)-1) and (token_ids[i]==pair[0]) and (token_ids[i+1]==pair[1]):
+                _token_ids.append(new_index)
+                i += 2
             else:
-                raise ValueError(f"invalid token id: {idx}")
-        text_bytes = b"".join(part_bytes)
-        text = text_bytes.decode("utf-8", errors="replace")
-        return text
+                _token_ids.append(token_ids[i])
+                i += 1
+        return _token_ids
 
-    def _encode_chunk(self, text_bytes: bytes) -> List[int]:
-        ids = list(text_bytes)
-        while len(ids) >= 2:
-            # find the pair with the lowest merge index
-            stats = get_stats(ids)
-            pair = min(stats, key=lambda p: self.merges.get(p, float("inf")))
-            # subtle: if there are no more merges available, the key will
-            # result in an inf for every single pair, and the min will be
-            # just the first pair in the list, arbitrarily
-            # we can detect this terminating case by a membership check
+    def train(self, corpus: str, verbose: bool=False):
+        assert self.vocab_size >= 256
+        num_merges = self.vocab_size - 256 - len(self.special_tokens)
+        
+        text_chunks = re.findall(self.pattern, corpus)
+        token_ids = [list(chunk.encode('utf-8')) for chunk in text_chunks]
+        
+        # Initialize vocab with byte-level tokens
+        self.vocab = {idx: bytes([idx]) for idx in range(256)}
+        
+        for i in range(num_merges):
+            stats = {}
+            for chunk_token in token_ids:
+                self.get_stats(chunk_token, stats)
+            top_pair = max(stats, key=stats.get)
+            index = 256 + len(self.special_tokens) + i
+            if verbose:
+                print(f"Merging: {top_pair} -> {index}")
+                
+            token_ids = [self.merge(chunk_token, top_pair, index) for chunk_token in token_ids]   
+                
+            self.vocab[index] = self.vocab[top_pair[0]] + self.vocab[top_pair[1]]
+            self.merges[top_pair] = index
+
+    def encode_chunks(self, chunk_bytes):
+        # Encodes individual chunks by performing merges
+        chunk_token_ids = list(chunk_bytes)
+        while len(chunk_token_ids) >= 2:
+            stats = {}
+            self.get_stats(chunk_token_ids, stats)
+            pair = min(stats, key=lambda x: self.merges.get(x, float("inf")))
             if pair not in self.merges:
-                break # nothing else can be merged anymore
-            # otherwise let's merge the best pair (lowest merge index)
-            idx = self.merges[pair]
-            ids = merge(ids, pair, idx)
-        return ids
+                break
+            index = self.merges[pair]
+            chunk_token_ids = self.merge(chunk_token_ids, pair, index)
+        return chunk_token_ids
+    
+    def encode(self, sequence: str) -> List[int]:
+        text_chunks = re.findall(self.pattern, sequence)
+        token_ids = []
+        
+        for chunk in text_chunks:
+            # Encode each chunk into bytes and then apply merges
+            chunk_bytes = chunk.encode("utf-8")
+            chunk_token_ids = self.encode_chunks(chunk_bytes)
+            token_ids.extend(chunk_token_ids)
+        
+        return token_ids
+    
+    def decode(self, ids: List[int]) -> str:
+        chunk_bytes = []
+        for token_id in ids:
+            if token_id in self.vocab:
+                chunk_bytes.append(self.vocab[token_id])
+            else:
+                raise ValueError(f"Invalid token id: {token_id}")
+        
+        # Join all byte tokens and decode them to a string
+        byte_sequence = b"".join(chunk_bytes)
+        return byte_sequence.decode('utf-8', errors="replace")
     
     def encode_ordinary(self, text: str) -> List[int]:
         """Encoding that ignores any special tokens."""
@@ -462,78 +493,108 @@ class LigandTokenizer(BaseModel):
             data = json.load(f)
         return cls(**data)
 
-class GPTTokenizer:
+ 
+from typing import List, Dict, Tuple, Union
+from tqdm import tqdm
 
-    tokenizer = AutoTokenizer.from_pretrained("gpt2")
-    EOA = tokenizer.eos_token
-
+class GPT4Tokenizer:
     def __init__(self):
-        """
-        Bert tokenizer class for converting text to numbers and vice versa.
-        """
-        self.tokenizer = self.tokenizer
-
-    def __len__(self) -> int:
-        """
-        Return the size of vocabulary.
-
-        Returns:
-            int : The size of vocabulary.
-        """
-        return self.tokenizer.vocab_size
-
-    @property
-    def pad_index(self) -> int:
-        """
-        Get the index of padding token.
-
-        Returns:
-            int : The index of padding token.
-        """
-        return self.tokenizer.bos_token_id
-
-    def get_vocab(self) -> Dict[str, int]:
-        """
-        Get the vocabulary of Tokenizer.
-
-        Returns:
-            Dict[str, int] : The vocabulary dictionary.
-        """
-        return self.tokenizer.get_vocab()
-
-    def encode(self, text: str) -> List[int]:
-        """
-        Tokenize the input text into a list of tokens.
-
-        Args:
-            text (str) : The input text.
+        self.pattern = LIGAND_PAT#r"""'(?i:[sdmt]|ll|ve|re)|[^\r\n\p{L}\p{N}]?+\p{L}+|\p{N}{1,3}| ?[^\s\p{L}\p{N}]++[\r\n]*|\s*[\r\n]|\s+(?!\S)|\s+"""
+        self.vocab_size = 1024
+        self.merges = {}
+        self.vocab = {}
+        self.special_tokens = {}
+    
+    # Register special tokens
+    def register_special_tokens(self, tokens: List[str]) -> None:
+        index = len(self.vocab)
+        for token in tokens:
+            if token not in self.special_tokens:
+                self.special_tokens[token] = index
+                self.vocab[index] = token.encode('utf-8')
+                index += 1
+    
+    # Find consecutive pairs   
+    def get_stats(self, token_ids: List[int], stats: Dict[Tuple[int, int], int]) -> Dict[Tuple[int, int], int]:
+        for pair in zip(token_ids, token_ids[1:]):
+            stats[pair] = stats.get(pair, 0) + 1
+        return stats
+    
+    # Merge token ids
+    def merge(self, token_ids: List[int], pair: Tuple[int, int], new_index: int) -> List[int]:
+        _token_ids = []
+        i = 0
+        while i < len(token_ids):
+            if (i < len(token_ids)-1) and (token_ids[i] == pair[0]) and (token_ids[i+1] == pair[1]):
+                _token_ids.append(new_index)
+                i += 2
+            else:
+                _token_ids.append(token_ids[i])
+                i += 1
+        return _token_ids
+    
+    def train(self, text: str, verbose: bool = False) -> None:
+        assert self.vocab_size >= 256
+        num_merges = self.vocab_size - 256 - len(self.special_tokens)  # Adjust for special tokens
         
-        Returns:
-            List[int] : The list of token indices.
-        """
-        return self.tokenizer.encode(text=text, add_special_tokens=False)
-
-    def decode(self, indices: List[int]) -> str:
-        """
-        Decode the list of indices into a text.
-
-        Args:
-            indices (List[int]) : The list of indices.
-
-        Returns:
-            str : The output text.
-        """
-        return self.tokenizer.decode(token_ids=indices, skip_special_tokens=False)
-
-    def tokenize(self, text: str) -> List[str]:
-        """
-        Tokenize the input text into a list of tokens and add special tokens.
-
-        Args:
-            text (str) : The input text.
-
-        Returns:
-            List[str] : The list of tokens.
-        """
-        tagged_text = text + "\n\n"
-        return self.encode(text=tagged_text)
+        text_chunks = re.findall(self.pattern, text)
+        token_ids = [list(chunk.encode('utf-8')) for chunk in text_chunks]
+        
+        self.vocab = {idx: bytes([idx]) for idx in range(256)}
+        
+        for i in tqdm(range(num_merges), desc="Training tokenizer"):
+            stats = {}
+            for chunk_token in token_ids:
+                self.get_stats(chunk_token, stats)
+            if not stats:
+                break
+            top_pair = max(stats, key=stats.get)
+            index = 256 + i
+            if verbose:
+                print(f"merged : {top_pair} -> {index}")
+                
+            token_ids = [self.merge(chunk_token, top_pair, index) for chunk_token in token_ids]   
+                
+            self.vocab[index] = self.vocab[top_pair[0]] + self.vocab[top_pair[1]]
+            self.merges[top_pair] = index
+    
+    # encode chunk
+    def encode_chunks(self, chunk_bytes: bytes) -> List[int]:
+        chunk_token_ids = list(chunk_bytes)
+        while len(chunk_token_ids) >= 2: 
+            stats = {}
+            self.get_stats(chunk_token_ids, stats)
+            pair = min(stats, key=lambda x: self.merges.get(x, float("inf")))
+            if pair not in self.merges:
+                break
+            index = self.merges[pair]
+            chunk_token_ids = self.merge(chunk_token_ids, pair, index)
+        return chunk_token_ids
+    
+    # encode full text
+    def encode(self, text: str) -> List[int]:
+        text_chunks = re.findall(self.pattern, text)
+        token_ids = []
+        
+        for chunk in text_chunks:
+            if chunk in self.special_tokens:
+                token_ids.append(self.special_tokens[chunk])
+                continue
+            
+            chunk_bytes = chunk.encode("utf-8")
+            chunk_tokens_ids = self.encode_chunks(chunk_bytes)
+            token_ids.extend(chunk_tokens_ids)
+        return token_ids
+                
+    # decoding
+    def decode(self, token_ids: List[int]) -> str:
+        chunk_bytes = []
+        for token in token_ids:
+            if token in self.vocab:
+                chunk_bytes.append(self.vocab[token])
+            else:
+                raise ValueError(f"Invalid token id: {token}")
+         
+        b_tokens_ids = b"".join(chunk_bytes)
+        text = b_tokens_ids.decode('utf-8', errors="replace")
+        return text

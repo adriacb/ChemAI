@@ -4,7 +4,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 from typing import List
-from tokenizer import LigandTokenizer
+from tokenizer import LBPETokenizer
 sys.path.append('..')
 from llm.models.transformer import DecoderTransformer
 
@@ -146,6 +146,19 @@ def cached_generate(
         idx = torch.cat([idx, next_token], dim=-1)
     return idx
 
+def resilient_generate(model: nn.Module, *args, **kwargs):
+    oom:bool = False
+
+    try:
+        return generate(model, *args, **kwargs)
+    except torch.cuda.OutOfMemoryError as e:
+        print(e)
+        oom = True
+    if oom:
+        torch.cuda.empty_cache()
+        # change cache implementation: TODO
+        return generate(model, *args, **kwargs)
+
 def main():
     args = parse_args()
     
@@ -157,12 +170,15 @@ def main():
     model.eval()
     
     # load the tokenizer
-    tokenizer = LigandTokenizer.load("tokenizer.json")
+    tokenizer = LBPETokenizer()
+    tokenizer.load("LBPE.model")
+    print(tokenizer.get_vocab_size())
+    print(type(list(tokenizer.vocab.keys())[0]))
 
 
     if args.input:
-        tokens = tokenizer.tokenize(args.input)
-        idx = tokenizer.encode(tokens)
+        #tokens = tokenizer.tokenize(args.input)
+        idx = tokenizer.encode(args.input)
         # check if any is None
         if None in idx:
             raise ValueError("Some tokens are not in the vocabulary.")
@@ -180,8 +196,10 @@ def main():
         args.max_len,
         args.temperature
     )
-    #generated_text = tokenizer.decode(generated_idx)
-    generated_text = tokenizer.decode_tkn(generated_idx)
+    # generated_idx to list
+    generated_idx = generated_idx.detach().cpu().numpy()[0]
+    print(generated_idx)
+    generated_text = tokenizer.decode(ids=generated_idx)
     print(generated_text)
     xyz_block = format_output(generated_text)
     print(xyz_block)

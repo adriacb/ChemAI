@@ -134,3 +134,8 @@ class GPTEmbedding(nn.Module):
         emb = self.embedding(x)
         pe = self.pe(torch.arange(i).unsqueeze(0).to(x.device))
         return emb + pe
+    
+    
+def count_parameters(model: torch.nn.Module) -> int:
+    """ Returns the number of learnable parameters for a PyTorch model """
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)

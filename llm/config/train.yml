@@ -1,18 +1,18 @@
 # yaml config file for training
 DecoderTransformer:
   # model parameters 
-  embedding_dim: 768   # embedding_dim // num_heads, Embedding dimension must be divisible by number of heads
-  n_layers: 12         # number of layers in the transformer (hidden layers)
-  num_heads: 12        # number of heads in multi-head attention
-  context_size: 256    # context size for the transformer
+  embedding_dim: 1280   # embedding_dim // num_heads, Embedding dimension must be divisible by number of heads
+  n_layers: 36         # number of layers in the transformer (hidden layers)
+  num_heads: 20        # number of heads in multi-head attention
+  context_size: 1024    # context size for the transformer
   dropout: 0.2         # dropout rate
   activation: gelu     # activation function {gelu, relu, silu}
   # review the following parameters
   dtype: float32       # data type {float32, float16, bfloat16}
-  qkv_bias: True       # whether to include bias in qkv projection (TODO)
+  qkv_bias: False       # whether to include bias in qkv projection (TODO)
   use_cache: True      # whether to use cache in transformer (TODO)
   intermediate_size: 3072  # intermediate size in the transformer
-  start_context: "<LIGAND>\nCn1c(=O)c2c(ncn2C)n(C)c1=O\n<XYZ>\n"
+  start_context: "<MOL>\nCn1c(=O)c2c(ncn2C)n(C)c1=O\n<XYZ>\n"
 
 training:
   # training parameters
@@ -31,6 +31,7 @@ tokenizer:
   # tokenizer parameters
   max_tokens: 256       # maximum number of tokens
   stride: 16            # stride for tokenization
+  vocab_size: 1024      
   # review the following parameters
   use_fast: True        # whether to use fast tokenizer (TODO)
 
